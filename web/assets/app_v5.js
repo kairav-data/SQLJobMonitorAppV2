@@ -600,8 +600,8 @@ async function loadJobs() {
         setStatus('', '');
         renderJobs();
 
-        // If any jobs are actively running, poll every 5 seconds until they finish
-        const hasRunning = S.jobs.some(j => j.last_run_status === 'In Progress');
+        // If any jobs are actively running or pipeline is running, poll every 5 seconds
+        const hasRunning = S.jobs.some(j => j.last_run_status === 'In Progress') || (typeof S.pipelineIsRunning !== 'undefined' && S.pipelineIsRunning);
         if (hasRunning) {
             clearTimeout(S.runningPollTimer);
             setStatus('⟳ Job running — auto-refreshing…', 'var(--primary)');
@@ -613,6 +613,10 @@ async function loadJobs() {
 
         if (typeof S !== 'undefined' && S.currentView === 'projects' && S.activeProject && typeof renderPipeline === 'function') {
             renderPipeline();
+        }
+        
+        if (typeof checkPipelineQueue === 'function') {
+            checkPipelineQueue();
         }
     } catch (e) {
         setStatus('Error: ' + e, 'var(--danger)');

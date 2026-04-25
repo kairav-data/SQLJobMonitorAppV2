@@ -50,14 +50,15 @@ function findProject(projectId, projects = S.projects) {
 
 function updateSavePipelineButton() {
     const btn = $('btn-save-pipeline');
-    if (!btn) return;
-
-    btn.disabled = !canEditPipeline() || !S.activeProject || S.pipelineSaveInFlight;
-    if (S.pipelineSaveInFlight) {
-        btn.textContent = 'Saving...';
-        return;
+    if (btn) {
+        btn.disabled = !canEditPipeline() || !S.activeProject || S.pipelineSaveInFlight;
+        if (S.pipelineSaveInFlight) {
+            btn.textContent = 'Saving...';
+        } else {
+            btn.textContent = S.pipelineDirty ? 'Save Pipeline*' : 'Save Pipeline';
+        }
     }
-    btn.textContent = S.pipelineDirty ? 'Save Pipeline*' : 'Save Pipeline';
+    if (typeof updatePipelineRunButton === 'function') updatePipelineRunButton();
 }
 
 function clearPipelineSaveTimer() {
@@ -206,6 +207,9 @@ function initProjects() {
 
     const btnSave = $('btn-save-pipeline');
     if (btnSave) btnSave.addEventListener('click', () => savePipeline({ silent: false }));
+
+    const btnRun = $('btn-run-pipeline');
+    if (btnRun) btnRun.addEventListener('click', togglePipelineRun);
 
     document.addEventListener('mousemove', e => {
         if (S.isDraggingNode) handleNodeDrag(e);
@@ -1027,4 +1031,176 @@ function renderPipeline() {
 
     // Render edges after nodes are in DOM
     project.edges.forEach(edge => appendPipelineEdge(svg, edge, project, editable));
+}
+
+// --- SEQUENTIAL PIPELINE EXECUTION ---
+
+function computeTopologicalSort(project) {
+    const jobs = project.jobs || [];
+    const edges = project.edges || [];
+    const adj = {};
+    const inDegree = {};
+    
+    jobs.forEach(j => {
+        adj[j] = [];
+        inDegree[j] = 0;
+    });
+    
+    edges.forEach(e => {
+        if (adj[e.source] && inDegree[e.target] !== undefined) {
+            adj[e.source].push(e.target);
+            inDegree[e.target]++;
+        }
+    });
+    
+    const queue = [];
+    jobs.forEach(j => {
+        if (inDegree[j] === 0) queue.push(j);
+    });
+    
+    const sorted = [];
+    while (queue.length > 0) {
+        const u = queue.shift();
+        sorted.push(u);
+        adj[u].forEach(v => {
+            inDegree[v]--;
+            if (inDegree[v] === 0) queue.push(v);
+        });
+    }
+    
+    if (sorted.length !== jobs.length) {
+        return null; // Cycle detected
+    }
+    return sorted;
+}
+
+function togglePipelineRun() {
+    if (S.pipelineIsRunning) {
+        if (typeof showConfirm === 'function') {
+            showConfirm(
+                'Halt Pipeline Execution?',
+                'This will stop the automated sequence. The currently running job will finish, but no further jobs will be triggered.',
+                stopPipeline,
+                'Stop Pipeline',
+                'danger'
+            );
+        } else {
+            stopPipeline();
+        }
+    } else {
+        if (!S.activeProject || !canOperateJobs()) return;
+        const sorted = computeTopologicalSort(S.activeProject);
+        if (!sorted) {
+            toast('Cannot run pipeline: circular dependency detected.', 'error');
+            return;
+        }
+        if (sorted.length === 0) {
+            toast('Pipeline is empty.', 'warning');
+            return;
+        }
+        
+        if (typeof showConfirm === 'function') {
+            showConfirm(
+                'Execute Pipeline Sequence',
+                `Are you sure you want to run <strong>${sorted.length}</strong> jobs sequentially?<br><br>The application will automatically orchestrate the execution and trigger the next job when the current one succeeds.`,
+                () => { startPipeline(sorted); },
+                'Start Sequence',
+                'primary'
+            );
+        } else {
+            startPipeline(sorted);
+        }
+    }
+}
+
+function startPipeline(preSorted = null) {
+    if (!S.activeProject || !canOperateJobs()) return;
+    const sorted = preSorted || computeTopologicalSort(S.activeProject);
+    if (!sorted || sorted.length === 0) return;
+    
+    S.pipelineQueue = sorted;
+    S.pipelineActiveJob = null;
+    S.pipelineIsRunning = true;
+    updatePipelineRunButton();
+    triggerNextPipelineJob();
+}
+
+function stopPipeline() {
+    S.pipelineIsRunning = false;
+    S.pipelineQueue = [];
+    S.pipelineActiveJob = null;
+    updatePipelineRunButton();
+    renderPipeline(); 
+    toast('Pipeline execution stopped.', 'info');
+}
+
+function updatePipelineRunButton() {
+    const btn = $('btn-run-pipeline');
+    if (!btn) return;
+    
+    if (!canOperateJobs() || !S.activeProject || !S.activeProject.jobs || S.activeProject.jobs.length === 0) {
+        btn.classList.add('hidden');
+        return;
+    }
+    
+    btn.classList.remove('hidden');
+    if (S.pipelineIsRunning) {
+        btn.textContent = '■ Stop Pipeline';
+        btn.style.backgroundColor = 'var(--danger)';
+        btn.style.borderColor = 'var(--danger)';
+    } else {
+        btn.textContent = '▶ Run Pipeline';
+        btn.style.backgroundColor = 'var(--success)';
+        btn.style.borderColor = 'var(--success)';
+    }
+}
+
+async function triggerNextPipelineJob() {
+    if (!S.pipelineIsRunning) return;
+    
+    if (S.pipelineQueue.length === 0) {
+        S.pipelineIsRunning = false;
+        S.pipelineActiveJob = null;
+        updatePipelineRunButton();
+        renderPipeline();
+        toast('Pipeline execution completed successfully!', 'success');
+        return;
+    }
+    
+    const nextJob = S.pipelineQueue.shift();
+    S.pipelineActiveJob = nextJob;
+    S.pipelineJobStartTime = new Date().getTime();
+    renderPipeline(); 
+    
+    toast(`Pipeline: Starting ${nextJob}...`, 'info');
+    const res = await api().run_job(S.activeServer.id, nextJob);
+    if (!res || !res.ok) {
+        toast(`Pipeline halted: Failed to start ${nextJob}. ${res ? res.message : ''}`, 'error');
+        stopPipeline();
+    } else {
+        setTimeout(() => { if (typeof loadJobs === 'function') loadJobs(); }, 1000);
+    }
+}
+
+function checkPipelineQueue() {
+    if (!S.pipelineIsRunning || !S.pipelineActiveJob) return;
+    
+    const jobInfo = (S.jobs || []).find(j => j.name === S.pipelineActiveJob);
+    if (!jobInfo) return; 
+    
+    const jobStartMs = jobInfo.start_execution_date ? new Date(jobInfo.start_execution_date).getTime() : 0;
+    const status = jobInfo.last_run_status.replace(/\s+/g, '');
+    
+    if (status === 'Succeeded') {
+        if (jobStartMs < (S.pipelineJobStartTime || 0) - 5000) {
+            return; 
+        }
+        triggerNextPipelineJob();
+    } else if (status === 'Failed' || status === 'Canceled') {
+        if (jobStartMs < (S.pipelineJobStartTime || 0) - 5000) {
+            return; 
+        }
+        toast(`Pipeline halted: ${S.pipelineActiveJob} ${status}.`, 'error');
+        stopPipeline();
+    }
 }

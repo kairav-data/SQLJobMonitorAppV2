@@ -589,11 +589,21 @@ body {
 .confirm-footer { display:flex; justify-content:center; gap:12px; }
 
 /* ── User Management ── */
+#um-list {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-right: -8px;
+  padding-right: 8px;
+}
 .user-list-header {
+  position: sticky;
+  top: 0;
+  background: #ffffff;
+  z-index: 10;
   display:grid; grid-template-columns:1fr 90px 130px;
   font-size:10px; font-weight:700; color:var(--text-3);
   text-transform:uppercase; letter-spacing:.5px;
-  padding: 0 4px 8px; border-bottom:1px solid var(--border);
+  padding: 8px 4px; border-bottom:1px solid var(--border);
 }
 .user-row {
   display:grid; grid-template-columns:1fr 90px 130px;
@@ -2940,36 +2950,25 @@ textarea.form-input {
 .nl-highlight { color: #2563EB; }
 .nl-desc { font-size: 15px; color: #64748b; line-height: 1.6; margin-bottom: 40px; }
 
-.nl-stats { display: flex; gap: 16px; margin-bottom: 48px; }
-.nl-stat-box {
-  background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 12px; padding: 16px 20px; flex: 1;
+.nl-features {
+  display: flex; flex-direction: column; gap: 16px; margin-top: 20px; margin-bottom: 24px;
 }
-.nl-stat-val { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
-.nl-stat-label { font-size: 12px; color: #94a3b8; font-weight: 500; }
-.text-green { color: #10B981; }
-.text-orange { color: #F59E0B; }
-.text-red { color: #EF4444; }
-
-.nl-live-jobs { margin-top: 20px; }
-.nl-lj-title {
-  font-size: 11px; font-weight: 700; color: #94a3b8; letter-spacing: 1px; margin-bottom: 16px;
+.nl-feature-item {
+  display: flex; align-items: flex-start; gap: 16px; padding: 16px; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.02); border: 1px solid #f1f5f9; transition: transform 0.2s;
 }
-.nl-lj-item {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 12px 0; border-bottom: 1px dashed #e2e8f0; font-size: 13px; font-family: monospace;
+.nl-feature-item:hover {
+  transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.04);
 }
-.nl-lj-left { display: flex; align-items: center; gap: 10px; color: #475569; font-weight: 600; }
-.nl-lj-right { display: flex; align-items: center; gap: 16px; }
-.nl-dot { width: 6px; height: 6px; border-radius: 50%; }
-.dot-green { background: #10B981; box-shadow: 0 0 4px #10B981; }
-.dot-orange { background: #F59E0B; box-shadow: 0 0 4px #F59E0B; }
-.dot-red { background: #EF4444; box-shadow: 0 0 4px #EF4444; }
-
-.nl-time { color: #94a3b8; }
-.nl-badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; font-family: sans-serif; text-transform: lowercase; }
-.badge-green { background: #d1fae5; color: #059669; }
-.badge-orange { background: #fef3c7; color: #d97706; }
-.badge-red { background: #fee2e2; color: #dc2626; }
+.nl-feature-icon {
+  width: 40px; height: 40px; border-radius: 10px; background: #f0fdf4; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.nl-feature-icon svg { width: 20px; height: 20px; }
+.nl-feature-item:nth-child(1) .nl-feature-icon { background: #eff6ff; }
+.nl-feature-item:nth-child(2) .nl-feature-icon { background: #f0fdf4; }
+.nl-feature-item:nth-child(3) .nl-feature-icon { background: #fffbeb; }
+.nl-feature-text { display: flex; flex-direction: column; gap: 4px; }
+.nl-feature-text strong { font-size: 14px; color: #0f172a; }
+.nl-feature-text span { font-size: 13px; color: #64748b; line-height: 1.4; }
 
 .nl-footer { margin-top: auto; font-size: 12px; color: #cbd5e1; }
 
@@ -3009,23 +3008,7 @@ textarea.form-input {
 }
 .nl-btn-primary:hover { background: #1d4ed8; }
 
-.nl-divider { text-align: center; position: relative; margin-bottom: 24px; }
-.nl-divider::before {
-  content: ""; position: absolute; left: 0; top: 50%; width: 100%; height: 1px; background: #e2e8f0; z-index: 1;
-}
-.nl-divider span { background: white; padding: 0 12px; color: #94a3b8; font-size: 12px; position: relative; z-index: 2; }
 
-.nl-btn-sso {
-  width: 100%; padding: 12px; background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 32px; transition: all 0.2s;
-}
-.nl-btn-sso:hover { background: #f1f5f9; border-color: #cbd5e1; }
-.sso-icon { width: 16px; height: 16px; }
-
-.nl-conn-status {
-  background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 24px;
-}
-.nl-conn-dot { width: 8px; height: 8px; background: #10B981; border-radius: 50%; flex-shrink: 0; }
-.nl-conn-text { font-size: 11px; color: #94a3b8; line-height: 1.5; font-family: monospace; text-align: left; }
 
 .nl-need-access { text-align: center; font-size: 13px; color: #94a3b8; }
 .nl-need-access a { color: #2563EB; text-decoration: none; font-weight: 600; }

@@ -611,7 +611,7 @@ def _replace_projects_in_sql(projects):
         _replace_projects_in_sql_conn(conn, projects)
 
 
-def _load_users_from_sql():
+def _load_users_from_sql(seed_defaults=False):
     with closing(_open_sql_connection()) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT id, username, [password], role FROM dbo.app_users ORDER BY username")
@@ -955,8 +955,9 @@ def get_user_by_username(username):
 
 def authenticate(username, password):
     users = _load_users()
+    target_username = str(username or "").strip().lower()
     for user in users:
-        if user["username"] == username and user["password"] == password:
+        if str(user.get("username") or "").strip().lower() == target_username and user.get("password") == password:
             return True, _normalize_role(user.get("role"), default="user")
     return False, None
 
@@ -971,15 +972,16 @@ def list_users():
 
 def add_user(username, password, role):
     users = _load_users()
-    if any(user["username"].lower() == username.lower() for user in users):
-        return False, f"Username '{username}' already exists."
+    clean_username = str(username or "").strip()
+    if any(str(user.get("username") or "").strip().lower() == clean_username.lower() for user in users):
+        return False, f"Username '{clean_username}' already exists."
     normalized_role = _normalize_role(role)
     if not normalized_role:
         return False, "Invalid role."
     users.append(
         {
             "id": str(uuid.uuid4()),
-            "username": username,
+            "username": clean_username,
             "password": password,
             "role": normalized_role,
         }
