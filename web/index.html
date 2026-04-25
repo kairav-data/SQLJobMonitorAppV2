@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SQL Job Monitor</title>
+  <link rel="stylesheet" href="assets/app.css?v=6" />
+</head>
+<body>
+
+  <div id="view-login" class="view new-login-view">
+    <div class="nl-left">
+      <div class="nl-brand">
+        <div class="nl-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 8h16"/><path d="M4 16h16"/></svg></div>
+        <span class="nl-brand-text">SQL Job Monitor</span>
+      </div>
+      
+      <div class="nl-hero">
+        <h1 class="nl-title">Monitor every<br/>job. <span class="nl-highlight">Zero</span> surprises.</h1>
+        <p class="nl-desc">Real-time visibility into all your SQL Server Agent<br/>jobs — durations, failures, queues, and trends in<br/>one unified dashboard.</p>
+        
+        <div class="nl-stats">
+          <div class="nl-stat-box">
+            <div class="nl-stat-val text-green">24</div>
+            <div class="nl-stat-label">Jobs running</div>
+          </div>
+          <div class="nl-stat-box">
+            <div class="nl-stat-val text-orange">3</div>
+            <div class="nl-stat-label">Queued</div>
+          </div>
+          <div class="nl-stat-box">
+            <div class="nl-stat-val text-red">1</div>
+            <div class="nl-stat-label">Failed today</div>
+          </div>
+        </div>
+        
+        <div class="nl-live-jobs">
+          <div class="nl-lj-title">LIVE JOBS</div>
+          
+          <div class="nl-lj-item">
+            <div class="nl-lj-left"><span class="nl-dot dot-green"></span> ETL_Daily_Sync</div>
+            <div class="nl-lj-right"><span class="nl-time">2m 14s</span> <span class="nl-badge badge-green">running</span></div>
+          </div>
+          <div class="nl-lj-item">
+            <div class="nl-lj-left"><span class="nl-dot dot-green"></span> Report_Gen_Weekly</div>
+            <div class="nl-lj-right"><span class="nl-time">8m 02s</span> <span class="nl-badge badge-green">running</span></div>
+          </div>
+          <div class="nl-lj-item">
+            <div class="nl-lj-left"><span class="nl-dot dot-orange"></span> Archive_Cleanup</div>
+            <div class="nl-lj-right"><span class="nl-time">-</span> <span class="nl-badge badge-orange">queued</span></div>
+          </div>
+          <div class="nl-lj-item">
+            <div class="nl-lj-left"><span class="nl-dot dot-red"></span> Backup_Full_DB</div>
+            <div class="nl-lj-right"><span class="nl-time">-</span> <span class="nl-badge badge-red">failed</span></div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="nl-footer">© 2026 eClerx SQL Job Monitor v2.4.1</div>
+    </div>
+    
+    <div class="nl-right">
+      <div class="nl-card">
+        <div class="nl-secure">SECURE ACCESS</div>
+        <h2 class="nl-card-title">Sign in to continue</h2>
+        <p class="nl-card-desc">Enter your credentials to access the<br/>dashboard.</p>
+        
+        <div class="nl-form-group">
+          <label class="nl-label">USERNAME</label>
+          <div class="nl-input-wrap">
+            <input id="inp-user" type="text" placeholder="Enter username" autocomplete="username" />
+            <svg class="nl-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+        </div>
+        
+        <div class="nl-form-group">
+          <label class="nl-label">PASSWORD</label>
+          <div class="nl-input-wrap">
+            <input id="inp-pass" type="password" placeholder="Enter password" autocomplete="current-password" />
+            <svg class="nl-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </div>
+        </div>
+        
+        <div class="nl-options">
+          <label class="nl-checkbox">
+            <input type="checkbox" checked />
+            <span class="nl-chk"></span>
+            Keep me signed in
+          </label>
+          <a href="#" class="nl-forgot">Forgot password?</a>
+        </div>
+        
+        <p id="login-err" class="login-err hidden" style="margin-top:-10px; margin-bottom:15px; font-size:12px; color:#EF4444; text-align:center;"></p>
+        
+        <button id="btn-login" class="nl-btn-primary">
+          <span id="btn-login-text">Sign In</span>
+          <span id="btn-login-spin" class="spin hidden"></span>
+        </button>
+        
+        <div class="nl-divider">
+          <span>or continue with</span>
+        </div>
+        
+        <button class="nl-btn-sso">
+          <svg class="sso-icon" viewBox="0 0 21 21"><path fill="#f25022" d="M1 1h9v9H1z"/><path fill="#7fba00" d="M11 1h9v9h-9z"/><path fill="#00a4ef" d="M1 11h9v9H1z"/><path fill="#ffb900" d="M11 11h9v9h-9z"/></svg>
+          Sign in with Microsoft SSO
+        </button>
+        
+        <div class="nl-conn-status">
+          <span class="nl-conn-dot"></span>
+          <div class="nl-conn-text">SQL Server 2022 • 127.0.0.1:1433 •<br/>Connected</div>
+        </div>
+        
+        <div class="nl-need-access">
+          Need access? <a href="#">Contact your administrator</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="view-dash" class="view hidden">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <img src="assets/logo.png" alt="Logo" class="company-logo-sm" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';" />
+        <span class="hex-icon sm" style="display:none;">SQ</span>
+        <div class="sidebar-logo-right">
+          <span id="role-badge" class="role-badge"></span>
+        </div>
+      </div>
+
+      <div class="sidebar-section-hdr">
+        <span>Servers</span>
+        <button id="btn-add-server" class="icon-btn hidden" title="Add Server">+</button>
+      </div>
+      <div id="server-list" class="server-list"></div>
+
+      <div class="sidebar-bottom">
+        <button id="btn-manage-users" class="sidebar-action-btn hidden">
+          Manage Users
+        </button>
+        <button id="btn-logout" class="sidebar-action-btn danger">
+          Log Out
+        </button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="main-header">
+        <div class="header-left">
+          <span class="header-kicker">SQL Server Operations</span>
+          <h2 id="server-title" class="server-title">Select a server</h2>
+          <div class="server-meta-row">
+            <span id="server-subtitle" class="server-subtitle"></span>
+            <span id="active-date-pill" class="active-date-pill hidden"></span>
+          </div>
+          <div class="view-tabs hidden" id="view-tabs">
+            <button class="view-tab-btn active" id="tab-jobs">Jobs List</button>
+            <button class="view-tab-btn" id="tab-projects">Projects</button>
+          </div>
+        </div>
+        <div class="header-right">
+          <div class="search-wrap">
+            <span class="search-icon">Search</span>
+            <input id="inp-search" class="search-input" placeholder="Search jobs... (3+ chars auto-refresh)" disabled />
+          </div>
+          <button id="btn-calendar" class="btn btn-ghost" disabled>Calendar</button>
+          <button id="btn-refresh" class="btn btn-primary sm" disabled>Refresh</button>
+        </div>
+      </header>
+
+      <div id="view-jobs" class="jobs-panel">
+        <div class="stats-bar">
+          <div class="stat-card" id="stat-total">
+            <div class="stat-value">-</div>
+            <div class="stat-label">Total Jobs</div>
+          </div>
+          <div class="stat-card success" id="stat-ok">
+            <div class="stat-value">-</div>
+            <div class="stat-label">Succeeded</div>
+          </div>
+          <div class="stat-card running" id="stat-run">
+            <div class="stat-value">-</div>
+            <div class="stat-label">Running</div>
+          </div>
+          <div class="stat-card danger" id="stat-fail">
+            <div class="stat-value">-</div>
+            <div class="stat-label">Failed</div>
+          </div>
+          <div class="stat-card muted" id="stat-dis">
+            <div class="stat-value">-</div>
+            <div class="stat-label">Disabled</div>
+          </div>
+        </div>
+
+        <div class="table-header">
+          <div class="th th-name sortable" data-col="name">Job Name <span class="sort-arrow">↕</span><div class="resizer" data-var="--w-name"></div></div>
+          <div class="th th-status sortable" data-col="last_run_status">Status <span class="sort-arrow">↕</span><div class="resizer" data-var="--w-status"></div></div>
+          <div class="th th-last sortable" data-col="start_execution_date">Last Run <span class="sort-arrow">↕</span><div class="resizer" data-var="--w-last"></div></div>
+          <div class="th th-next sortable" data-col="next_scheduled_run_date">Next Run <span class="sort-arrow">↕</span><div class="resizer" data-var="--w-next"></div></div>
+          <div class="th th-actions">Actions<div class="resizer" data-var="--w-actions"></div></div>
+          <div class="th th-toggle">Enabled</div>
+        </div>
+
+        <div id="job-list" class="job-list"></div>
+      </div>
+
+      <div id="view-projects" class="hidden">
+        <div id="projects-list-view" style="display:flex; flex-direction:column; flex:1; overflow:hidden;">
+          <div class="projects-header">
+            <h3>Server Projects</h3>
+            <button id="btn-create-project" class="btn btn-primary sm hidden">+ Create Project</button>
+          </div>
+          <div id="projects-grid" class="projects-grid"></div>
+        </div>
+
+        <div id="pipeline-view" class="pipeline-container hidden">
+          <div class="pipeline-header">
+            <div>
+              <button id="btn-back-projects" class="btn btn-ghost sm">← Back</button>
+              <span id="pipeline-title" style="margin-left:12px; font-weight:600;"></span>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <button id="btn-save-pipeline" class="btn btn-primary sm hidden">Save Pipeline</button>
+            </div>
+          </div>
+          <div style="display:flex; flex:1; overflow:hidden;">
+            <div id="pipeline-jobs-panel" class="pipeline-jobs-panel hidden">
+              <div class="panel-header">Available Jobs</div>
+              <div id="pipeline-available-jobs" class="available-jobs-list"></div>
+            </div>
+
+            <div id="pipeline-canvas" class="pipeline-canvas-area" style="flex:1;">
+              <svg class="pipeline-svg" id="pipeline-svg"></svg>
+              <div id="pipeline-nodes"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="status-bar" class="status-bar"></div>
+    </main>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div id="modal-box" class="modal-box"></div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="assets/app_v5.js?v=4"></script>
+  <script src="assets/projects.js?v=2"></script>
+</body>
+</html>

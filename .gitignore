@@ -1,0 +1,22 @@
+# Virtual Environment
+venv/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Local Databases
+servers_db.json
+users_db.json
+app_db_config.json
+
+# IDE
+.vscode/
+
+# Build scripts if necessary
+# build.bat

@@ -1,0 +1,13 @@
+{
+    "backend": "sqlserver",
+    "driver": "ODBC Driver 17 for SQL Server",
+    "server": "LAPTOP-JM85S57U",
+    "database": "EnterpriseSQLJobMonitorApp",
+    "username": "sa",
+    "password": "Strong@Password123",
+    "trusted_connection": false,
+    "encrypt": false,
+    "trust_server_certificate": true,
+    "bootstrap_from_local": false,
+    "timeout": 5
+}
