@@ -339,3 +339,55 @@ def set_job_enabled(server, job_name, enabled: bool):
     except Exception as e:
         conn.close()
         return False, str(e)
+
+
+def execute_select_query(server, sql):
+    """
+    Execute a SELECT-only SQL query against any database on the server.
+    Returns (True, {columns: [...], rows: [[...], ...]}) on success,
+    or (False, error_message) on failure.
+    All cell values are converted to strings.
+    """
+    import re as _re
+
+    # Validate: only SELECT statements allowed (strip comments + leading whitespace)
+    stripped = _re.sub(r'--[^\n]*', '', sql)          # remove line comments
+    stripped = _re.sub(r'/\*.*?\*/', '', stripped, flags=_re.DOTALL)  # remove block comments
+    first_word = stripped.strip().split()[0].upper() if stripped.strip() else ''
+    if first_word != 'SELECT':
+        return False, "Only SELECT queries are allowed."
+
+    # Build a connection string without locking to msdb — use master as default DB
+    try:
+        address = server.get('address')
+        instance = server.get('instance')
+        user = server.get('user')
+        password = server.get('password')
+        server_str = f"{address}\\{instance}" if instance else address
+        driver = '{ODBC Driver 17 for SQL Server}'
+        if user and password:
+            conn_str = f"DRIVER={driver};SERVER={server_str};DATABASE=master;UID={user};PWD={password};TrustServerCertificate=yes;"
+        else:
+            conn_str = f"DRIVER={driver};SERVER={server_str};DATABASE=master;Trusted_Connection=yes;TrustServerCertificate=yes;"
+        import pyodbc as _pyodbc
+        try:
+            conn = _pyodbc.connect(conn_str, timeout=10)
+        except Exception:
+            # fallback to legacy driver
+            conn_str = conn_str.replace(driver, '{SQL Server}')
+            conn = _pyodbc.connect(conn_str, timeout=10)
+    except Exception as e:
+        return False, str(e)
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        columns = [desc[0] for desc in cursor.description] if cursor.description else []
+        rows = []
+        for row in cursor.fetchall():
+            rows.append([str(cell) if cell is not None else '' for cell in row])
+        conn.close()
+        return True, {"columns": columns, "rows": rows}
+    except Exception as e:
+        conn.close()
+        return False, str(e)

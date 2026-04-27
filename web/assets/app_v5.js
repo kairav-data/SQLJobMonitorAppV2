@@ -32,7 +32,7 @@ var fmtDur = secs => {
 
 /* ─── state ────────────────────────────────────────────────────────────────── */
 var S = {
-    role: null, userId: null, username: null,
+    role: null, userId: null, username: null, permissions: {view: false, run: false, toggle: false},
     defaultServerId: null, defaultProjectId: null,
     servers: [], activeServer: null,
     jobs: [], sortBy: 'name', sortDir: 'asc', q: '',
@@ -70,12 +70,12 @@ var normalizeRole = role => {
 var isAdmin = () => normalizeRole(S.role) === 'admin';
 var isRestrictedUser = () => normalizeRole(S.role) === 'user';
 var canOperateJobs = () => {
-    const role = normalizeRole(S.role);
-    return role === 'admin' || role === 'ops' || role === 'user';
+    if (isAdmin()) return true;
+    return S.permissions ? S.permissions.run : false;
 };
 var canToggleJobs = () => {
-    const role = normalizeRole(S.role);
-    return role === 'admin' || role === 'ops';
+    if (isAdmin()) return true;
+    return S.permissions ? S.permissions.toggle : false;
 };
 
 function setAdminOnlyVisibility(isVisible) {
@@ -326,6 +326,7 @@ async function doLogin() {
         S.role = normalizeRole(res.role);
         S.userId = res.user_id;
         S.username = res.username;
+        S.permissions = res.permissions || {view: false, run: false, toggle: false};
         S.defaultServerId = res.default_server_id || null;
         S.defaultProjectId = res.default_project_id || null;
         await showDashboard();
@@ -355,7 +356,7 @@ function doLogout() {
     S.runningPollTimer = null;
     if (typeof stopProjectSync === 'function') stopProjectSync();
     stopSharedSync();
-    S.role = null; S.userId = null; S.username = null;
+    S.role = null; S.userId = null; S.username = null; S.permissions = null;
     S.defaultServerId = null; S.defaultProjectId = null;
     S.servers = []; S.activeServer = null;
     S.jobs = []; S.q = ''; S.alertedKeys.clear();
@@ -570,7 +571,15 @@ function openAddServer() {
             document.getElementById('as-msg').style.color = 'var(--danger)';
             return;
         }
+        const btn = document.getElementById('as-save');
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+        
         const res = await api().add_server(v('as-alias'), v('as-addr'), v('as-inst'), v('as-user'), v('as-pass'));
+        
+        btn.disabled = false;
+        btn.textContent = 'Save Server';
+        
         S.servers = res.servers;
         renderServers();
         hideModal();
@@ -1070,7 +1079,16 @@ async function openUserManagement() {
         const role = document.getElementById('um-role').value;
         const msg = document.getElementById('um-msg');
         if (!uname || !pass) { msg.style.color = 'var(--danger)'; msg.textContent = 'Username and password are required.'; return; }
+        
+        const btn = document.getElementById('um-add');
+        btn.disabled = true;
+        btn.textContent = 'Adding...';
+        
         const res = await api().add_user(uname, pass, role);
+        
+        btn.disabled = false;
+        btn.textContent = '+ Add User';
+        
         if (res.ok) {
             msg.style.color = 'var(--success)';
             msg.textContent = `✓ User '${uname}' added.`;
@@ -1099,6 +1117,7 @@ async function renderUserList() {
       <div class="user-name">${u.username}${isSelf ? ' <span style="font-size:10px;color:var(--text-3)">(you)</span>' : ''}</div>
       <div><span class="badge" style="background:rgba(0,0,0,.3);color:${rColor};border:1px solid ${rColor}40">${u.role}</span></div>
       <div class="user-actions">
+        <button class="btn btn-ghost sm um-acc" data-uid="${u.id}" data-name="${u.username}" data-perms='${JSON.stringify(u.permissions||{})}' style="font-size:11px;padding:4px 10px">⚙️ Access</button>
         <button class="btn btn-ghost sm um-pwd" data-uid="${u.id}" data-name="${u.username}" style="font-size:11px;padding:4px 10px">🔑 Passwd</button>
         <button class="btn btn-danger sm um-del" data-uid="${u.id}" data-name="${u.username}" style="font-size:11px;padding:4px 10px" ${isSelf ? 'disabled title="Cannot delete yourself"' : ''}>✕</button>
       </div>
@@ -1106,11 +1125,70 @@ async function renderUserList() {
     });
     ul.innerHTML = html;
 
+    ul.querySelectorAll('.um-acc').forEach(btn => {
+        btn.addEventListener('click', () => changeAccess(btn.dataset.uid, btn.dataset.name, JSON.parse(btn.dataset.perms)));
+    });
     ul.querySelectorAll('.um-pwd').forEach(btn => {
         btn.addEventListener('click', () => changePassword(btn.dataset.uid, btn.dataset.name));
     });
     ul.querySelectorAll('.um-del:not(:disabled)').forEach(btn => {
         btn.addEventListener('click', () => deleteUser(btn.dataset.uid, btn.dataset.name));
+    });
+}
+
+function changeAccess(userId, username, perms) {
+    const box = el('div');
+    const pView = perms.view !== false;
+    const pRun = perms.run === true;
+    const pToggle = perms.toggle === true;
+    
+    box.innerHTML = `
+    <div class="modal-title">⚙️ Access Permissions</div>
+    <div class="modal-sub">Granular access for <strong>${username}</strong></div>
+    <div style="display:flex; flex-direction:column; gap:10px; margin: 15px 0;">
+      <label style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="chk-view" ${pView ? 'checked' : ''}> Can View Jobs & Projects
+      </label>
+      <label style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="chk-run" ${pRun ? 'checked' : ''}> Can Run Jobs
+      </label>
+      <label style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="chk-toggle" ${pToggle ? 'checked' : ''}> Can Enable/Disable Jobs
+      </label>
+    </div>
+    <p id="acc-msg" style="font-size:12px;min-height:16px"></p>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="acc-back">← Back</button>
+      <button class="btn btn-primary" id="acc-save">Save</button>
+    </div>`;
+    showModal(box, false);
+    document.getElementById('acc-back').addEventListener('click', openUserManagement);
+    document.getElementById('acc-save').addEventListener('click', async () => {
+        const newPerms = {
+            view: document.getElementById('chk-view').checked,
+            run: document.getElementById('chk-run').checked,
+            toggle: document.getElementById('chk-toggle').checked
+        };
+        const msg = document.getElementById('acc-msg');
+        msg.textContent = 'Saving...';
+        msg.style.color = 'var(--text-2)';
+        
+        const btn = document.getElementById('acc-save');
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+        
+        const res = await api().update_user_permissions(userId, newPerms);
+        
+        btn.disabled = false;
+        btn.textContent = 'Save';
+        
+        if (res.ok) { 
+            toast(`Permissions updated for '${username}'.`, 'success'); 
+            openUserManagement(); 
+        } else { 
+            msg.style.color = 'var(--danger)'; 
+            msg.textContent = '✗ ' + res.error; 
+        }
     });
 }
 
@@ -1141,8 +1219,8 @@ async function deleteUser(userId, username) {
     showConfirm('Delete User', `Delete user '${username}'?\nThis cannot be undone.`, async () => {
         const res = await api().delete_user(userId);
         if (res.ok) { toast(`User '${username}' deleted.`, 'success'); openUserManagement(); }
-        else toast('Error: ' + res.error, 'error');
-    }, '✕ Delete', 'danger');
+        else { toast('Error: ' + res.error, 'error'); openUserManagement(); }
+    }, '✕ Delete', 'danger', () => { openUserManagement(); });
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -1192,6 +1270,7 @@ function showModal(contentEl, closeOnOverlay = true) {
 function hideModal() {
     $('modal-overlay').classList.add('hidden');
     $('modal-box').innerHTML = '';
+    $('modal-box').removeAttribute('style');
 }
 
 function showConfirm(title, message, onConfirm, confirmLabel = 'Confirm', confirmStyle = 'primary', onCancel = null) {
@@ -1216,8 +1295,24 @@ function showConfirm(title, message, onConfirm, confirmLabel = 'Confirm', confir
       <button class="btn btn-${confirmStyle}" id="conf-ok">${confirmLabel}</button>
     </div>`;
     showModal(box);
-    document.getElementById('conf-cancel').addEventListener('click', () => { hideModal(); if (onCancel) onCancel(); });
-    document.getElementById('conf-ok').addEventListener('click', () => { hideModal(); onConfirm(); });
+    document.getElementById('conf-cancel').addEventListener('click', () => { 
+        if (onCancel) onCancel(); 
+        else hideModal(); 
+    });
+    document.getElementById('conf-ok').addEventListener('click', async () => { 
+        const btn = document.getElementById('conf-ok');
+        btn.disabled = true;
+        const originalText = btn.textContent;
+        btn.textContent = 'Processing...';
+        
+        try {
+            if (onConfirm) await onConfirm();
+        } finally {
+            if (document.contains(btn)) {
+                hideModal();
+            }
+        }
+    });
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -1286,6 +1381,202 @@ if (window.pywebview) {
         init();
     });
 }
+
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SQL DOWNLOAD FEATURE
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+var _sqlResultData = null; // { columns, rows }
+
+function initSqlDownload() {
+    const runBtn  = $('btn-sql-run');
+    const dlBtn   = $('btn-sql-download');
+    const clrBtn  = $('btn-sql-clear');
+    const editor  = $('sql-query-input');
+
+    if (!runBtn || !editor) return;
+
+    // Enable run button when server is active
+    function updateSqlRunBtn() {
+        if (runBtn) runBtn.disabled = !S.activeServer;
+    }
+    updateSqlRunBtn();
+
+    // Ctrl+Enter to run
+    editor.addEventListener('keydown', e => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            if (!runBtn.disabled) runSqlQuery();
+        }
+    });
+
+    runBtn.addEventListener('click', runSqlQuery);
+    dlBtn.addEventListener('click', downloadSqlExcel);
+    clrBtn.addEventListener('click', () => {
+        editor.value = '';
+        _sqlResultData = null;
+        setSqlStatus('', '');
+        setSqlRowCount('');
+        $('btn-sql-download').disabled = true;
+        $('sql-result-empty').classList.remove('hidden');
+        $('sql-result-table-wrap').classList.add('hidden');
+        $('sql-result-table').innerHTML = '';
+    });
+
+    // Keep run button in sync with server selection (poll S.activeServer)
+    setInterval(updateSqlRunBtn, 500);
+}
+
+async function runSqlQuery() {
+    if (!S.activeServer) { toast('Select a server first.', 'warning'); return; }
+
+    const sql = $('sql-query-input').value.trim();
+    if (!sql) { setSqlStatus('Please enter a SELECT query.', 'error'); return; }
+
+    const runBtn = $('btn-sql-run');
+    runBtn.disabled = true;
+    runBtn.textContent = '⟳ Running…';
+    setSqlStatus('Executing query…', '');
+    setSqlRowCount('');
+    $('btn-sql-download').disabled = true;
+    _sqlResultData = null;
+
+    // Show loading state in result area
+    $('sql-result-empty').classList.add('hidden');
+    $('sql-result-table-wrap').classList.add('hidden');
+    const resultWrap = $('sql-result-wrap');
+    let loadingEl = document.createElement('div');
+    loadingEl.className = 'sql-result-loading';
+    loadingEl.id = 'sql-result-loading';
+    loadingEl.innerHTML = '<div class="spin" style="width:22px;height:22px;border-width:3px;border-top-color:var(--primary)"></div><span>Executing query…</span>';
+    resultWrap.appendChild(loadingEl);
+
+    try {
+        const res = await api().execute_sql_download(S.activeServer.id, sql);
+        if (!res.ok) {
+            setSqlStatus('✗ ' + res.error, 'error');
+            setSqlRowCount('');
+            $('sql-result-empty').classList.remove('hidden');
+        } else {
+            _sqlResultData = { columns: res.columns, rows: res.rows };
+            renderSqlResultTable(res.columns, res.rows);
+            setSqlStatus('✓ Query executed successfully', 'success');
+            setSqlRowCount(`${res.row_count.toLocaleString()} row${res.row_count !== 1 ? 's' : ''}`);
+            $('btn-sql-download').disabled = false;
+            toast(`Query returned ${res.row_count.toLocaleString()} row${res.row_count !== 1 ? 's' : ''}.`, 'success', 3000);
+        }
+    } catch (e) {
+        setSqlStatus('✗ ' + String(e), 'error');
+        setSqlRowCount('');
+        $('sql-result-empty').classList.remove('hidden');
+    } finally {
+        runBtn.disabled = !S.activeServer;
+        runBtn.textContent = '▶ Run Query';
+        const loaderEl = document.getElementById('sql-result-loading');
+        if (loaderEl) loaderEl.remove();
+    }
+}
+
+function renderSqlResultTable(columns, rows) {
+    const table = $('sql-result-table');
+    table.innerHTML = '';
+
+    // Header
+    const thead = document.createElement('thead');
+    const trHead = document.createElement('tr');
+    columns.forEach(col => {
+        const th = document.createElement('th');
+        th.textContent = col;
+        th.title = col;
+        trHead.appendChild(th);
+    });
+    thead.appendChild(trHead);
+    table.appendChild(thead);
+
+    // Body
+    const tbody = document.createElement('tbody');
+    rows.forEach(row => {
+        const tr = document.createElement('tr');
+        row.forEach(cell => {
+            const td = document.createElement('td');
+            td.textContent = cell;
+            td.title = cell;
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    $('sql-result-empty').classList.add('hidden');
+    $('sql-result-table-wrap').classList.remove('hidden');
+}
+
+async function downloadSqlExcel() {
+    if (!_sqlResultData) { toast('No data to download. Run a query first.', 'warning'); return; }
+
+    const { columns, rows } = _sqlResultData;
+
+    // Build CSV with all values quoted as strings (forces Excel to treat as text)
+    const escape = val => '"' + String(val === null || val === undefined ? '' : val).replace(/"/g, '""') + '"';
+
+    const lines = [];
+    lines.push(columns.map(escape).join(','));
+    rows.forEach(row => {
+        lines.push(row.map(cell => escape(cell)).join(','));
+    });
+
+    // CSV content (no BOM — Python writes utf-8-sig BOM on save)
+    const csvContent = lines.join('\r\n');
+
+    // Suggested filename with timestamp
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+    const suggestedName = `sql_download_${ts}.csv`;
+
+    // Disable button while dialog is open
+    const dlBtn = $('btn-sql-download');
+    if (dlBtn) { dlBtn.disabled = true; dlBtn.textContent = '⟳ Saving…'; }
+
+    try {
+        // Ask Python to open the native Save As dialog and write the file
+        const res = await api().save_csv_file(suggestedName, csvContent);
+
+        if (res.cancelled) {
+            // User closed/cancelled the dialog — no action needed
+            return;
+        }
+        if (!res.ok) {
+            toast('Save failed: ' + (res.error || 'Unknown error'), 'error', 4000);
+            return;
+        }
+
+        // Show the saved path in the toast
+        const shortPath = res.path.length > 60
+            ? '…' + res.path.slice(-57)
+            : res.path;
+        toast(`✓ Saved ${rows.length.toLocaleString()} rows → ${shortPath}`, 'success', 5000);
+
+    } catch (e) {
+        toast('Save error: ' + String(e), 'error', 4000);
+    } finally {
+        if (dlBtn) { dlBtn.disabled = false; dlBtn.textContent = '⬇ Download Excel'; }
+    }
+}
+
+
+function setSqlStatus(msg, type) {
+    const el = $('sql-status-msg');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'sql-status-msg' + (type ? ' ' + type : '');
+}
+
+function setSqlRowCount(txt) {
+    const el = $('sql-row-count');
+    if (el) el.textContent = txt;
+}
+
+
 
 
 

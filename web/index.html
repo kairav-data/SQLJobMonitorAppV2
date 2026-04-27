@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SQL Job Monitor</title>
-  <link rel="stylesheet" href="assets/app.css?v=6" />
+  <link rel="stylesheet" href="assets/app_v11.css" />
 </head>
 <body>
 
@@ -138,15 +138,18 @@
           <div class="view-tabs hidden" id="view-tabs">
             <button class="view-tab-btn active" id="tab-jobs">Jobs List</button>
             <button class="view-tab-btn" id="tab-projects">Projects</button>
+            <button class="view-tab-btn" id="tab-sql-download">⬇ SQL Download</button>
           </div>
         </div>
         <div class="header-right">
           <div class="search-wrap">
-            <span class="search-icon">Search</span>
-            <input id="inp-search" class="search-input" placeholder="Search jobs... (3+ chars auto-refresh)" disabled />
+            <span class="search-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </span>
+            <input id="inp-search" class="search-input" placeholder="Search jobs... (3+ chars)" disabled />
           </div>
           <button id="btn-calendar" class="btn btn-ghost" disabled>Calendar</button>
-          <button id="btn-refresh" class="btn btn-primary sm" disabled>Refresh</button>
+          <button id="btn-refresh" class="btn btn-primary" disabled>Refresh</button>
         </div>
       </header>
 
@@ -202,6 +205,10 @@
               <span id="pipeline-title" style="margin-left:12px; font-weight:600;"></span>
             </div>
             <div style="display:flex; gap:8px; align-items:center;">
+              <button id="btn-zoom-out" class="btn btn-ghost sm" title="Zoom Out">➖</button>
+              <span id="pipeline-zoom-level" style="font-size:12px; font-weight:600; min-width:3ch; text-align:center;">100%</span>
+              <button id="btn-zoom-in" class="btn btn-ghost sm" title="Zoom In">➕</button>
+              <div style="width:1px; height:16px; background:var(--border); margin:0 4px;"></div>
               <button id="btn-run-pipeline" class="btn btn-success sm hidden" style="background-color: var(--success); border-color: var(--success); color: #fff;">▶ Run Pipeline</button>
               <button id="btn-save-pipeline" class="btn btn-primary sm hidden">Save Pipeline</button>
             </div>
@@ -211,16 +218,65 @@
               <div class="panel-header">Available Jobs</div>
               <div id="pipeline-available-jobs" class="available-jobs-list"></div>
             </div>
+            
+            <div class="sidebar-resizer hidden" id="jobs-panel-resizer"></div>
 
             <div id="pipeline-canvas" class="pipeline-canvas-area" style="flex:1;">
-              <svg class="pipeline-svg" id="pipeline-svg"></svg>
-              <div id="pipeline-nodes"></div>
+              <div id="pipeline-zoom-wrapper" style="transform-origin: 0 0; transform: scale(1);">
+                <svg class="pipeline-svg" id="pipeline-svg"></svg>
+                <div id="pipeline-nodes"></div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <div id="status-bar" class="status-bar"></div>
+
+      <!-- SQL Download Panel -->
+      <div id="view-sql-download" class="hidden sql-download-panel">
+        <div class="sql-download-header">
+          <div class="sql-download-header-left">
+            <span class="sql-download-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:6px"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+              SQL Download
+            </span>
+            <span class="sql-download-hint">Write a SELECT query and download results as Excel</span>
+          </div>
+          <div class="sql-download-actions">
+            <button id="btn-sql-run" class="btn btn-primary sm" disabled>▶ Run Query</button>
+            <button id="btn-sql-download" class="btn btn-success sm" disabled>⬇ Download Excel</button>
+            <button id="btn-sql-clear" class="btn btn-ghost sm">✕ Clear</button>
+          </div>
+        </div>
+
+        <div class="sql-editor-wrap">
+          <textarea
+            id="sql-query-input"
+            class="sql-editor"
+            placeholder="-- Write your SELECT query here&#10;-- Example:&#10;SELECT TOP 100 * FROM msdb.dbo.sysjobs ORDER BY name"
+            spellcheck="false"
+          ></textarea>
+          <div class="sql-editor-footer">
+            <span id="sql-status-msg" class="sql-status-msg"></span>
+            <span id="sql-row-count" class="sql-row-count"></span>
+          </div>
+        </div>
+
+        <div class="sql-result-wrap" id="sql-result-wrap">
+          <div class="sql-result-empty" id="sql-result-empty">
+            <div class="sql-result-empty-icon">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <p>Run a SELECT query to preview and download results</p>
+          </div>
+          <div id="sql-result-table-wrap" class="sql-result-table-wrap hidden">
+            <table id="sql-result-table" class="sql-result-table"></table>
+          </div>
+        </div>
+      </div>
+
+
     </main>
   </div>
 
@@ -230,7 +286,7 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="assets/app_v5.js?v=4"></script>
-  <script src="assets/projects.js?v=2"></script>
+  <script src="assets/app_v5.js?v=8"></script>
+  <script src="assets/projects.js?v=7"></script>
 </body>
 </html>

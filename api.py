@@ -73,6 +73,7 @@ class Api:
             "username": self._current_username,
             "default_server_id": default_server_id,
             "default_project_id": default_project_id,
+            "permissions": self._user_permissions(),
         }
 
     def logout(self):
@@ -129,6 +130,8 @@ class Api:
         server = self._authorized_server(server_id)
         if not server:
             return {"ok": False, "error": "Server not found or access denied."}
+        if not self._user_permissions().get("view", False):
+            return {"ok": True, "jobs": []}
 
         ok, result = sql_agent.fetch_jobs(server)
         if not ok:
@@ -141,6 +144,8 @@ class Api:
         server = self._authorized_server(server_id)
         if not server:
             return {"ok": False, "error": "Server not found or access denied."}
+        if not self._user_permissions().get("view", False):
+            return {"ok": True, "jobs": []}
 
         ok, result = sql_agent.fetch_jobs_by_date(server, date_str)
         if not ok:
@@ -165,6 +170,8 @@ class Api:
             return {"ok": False, "message": "Server not found or access denied."}
         if not self._can_toggle_jobs():
             return {"ok": False, "message": "Only admins and ops users can enable or disable jobs."}
+        if not self._can_run_job(server_id, job_name):
+            return {"ok": False, "message": "You are not allowed to modify this job."}
 
         ok, message = sql_agent.set_job_enabled(server, job_name, bool(enabled))
         return {"ok": ok, "message": message}
@@ -173,6 +180,8 @@ class Api:
         server = self._authorized_server(server_id)
         if not server:
             return {"ok": False, "error": "Server not found or access denied."}
+        if not self._user_permissions().get("view", False):
+            return {"ok": False, "error": "You do not have permission to view jobs."}
         if not self._can_view_job(server_id, job_name):
             return {"ok": False, "error": "You are not allowed to view this job."}
 
@@ -185,6 +194,8 @@ class Api:
         server = self._authorized_server(server_id)
         if not server:
             return {"ok": False, "error": "Server not found or access denied."}
+        if not self._user_permissions().get("view", False):
+            return {"ok": True, "schedules": {}}
 
         ok, result = sql_agent.fetch_job_schedules(server)
         if not ok:
@@ -192,11 +203,11 @@ class Api:
 
         allowed_job_names = self._allowed_job_names(server_id)
         if allowed_job_names is not None:
-            allowed = set(allowed_job_names)
+            allowed = {str(n).strip().lower() for n in allowed_job_names if n}
             result = {
                 job_name: dates
                 for job_name, dates in result.items()
-                if job_name in allowed
+                if str(job_name).strip().lower() in allowed
             }
 
         serialized = {
@@ -209,6 +220,8 @@ class Api:
         server = self._authorized_server(server_id)
         if not server:
             return {"ok": False, "error": "Server not found or access denied."}
+        if not self._user_permissions().get("view", False):
+            return {"ok": True, "activity": {}}
 
         ok, result = sql_agent.fetch_job_activity_dates(server, lookback_days=lookback_days)
         if not ok:
@@ -216,10 +229,10 @@ class Api:
 
         allowed_job_names = self._allowed_job_names(server_id)
         if allowed_job_names is not None:
-            allowed = set(allowed_job_names)
+            allowed = {str(n).strip().lower() for n in allowed_job_names if n}
             filtered = {}
             for day, payload in result.items():
-                jobs = [job_name for job_name in payload.get("jobs", []) if job_name in allowed]
+                jobs = [job_name for job_name in payload.get("jobs", []) if str(job_name).strip().lower() in allowed]
                 if jobs:
                     filtered[day] = {"count": len(jobs), "jobs": jobs}
             result = filtered
@@ -254,6 +267,14 @@ class Api:
             return {"ok": True}
         return {"ok": False, "error": result}
 
+    def update_user_permissions(self, user_id, permissions):
+        if not self._is_admin():
+            return {"ok": False, "error": "Only admins can change permissions."}
+        ok, result = database.update_user_permissions(user_id, permissions)
+        if ok:
+            return {"ok": True, "users": result}
+        return {"ok": False, "error": result}
+
     def delete_user(self, user_id):
         if not self._is_admin():
             return {"ok": False, "error": "Only admins can delete users."}
@@ -268,6 +289,8 @@ class Api:
     def get_projects(self, server_id):
         if not self._can_access_server(server_id):
             return {"ok": False, "error": "Server not found or access denied.", "projects": []}
+        if not self._user_permissions().get("view", False):
+            return {"ok": True, "projects": []}
 
         projects = database.get_projects_for_user(
             self._current_user_id,
@@ -314,6 +337,68 @@ class Api:
         projects = database.delete_project(project_id)
         return {"ok": True, "projects": self._serialize_projects(projects)}
 
+    # SQL Download
+
+    def execute_sql_download(self, server_id, sql_query):
+        """
+        Execute a SELECT-only SQL query against the chosen server and return
+        all data as JSON with every cell value converted to a plain string.
+        """
+        server = self._authorized_server(server_id)
+        if not server:
+            return {"ok": False, "error": "Server not found or access denied."}
+
+        ok, result = sql_agent.execute_select_query(server, sql_query)
+        if not ok:
+            return {"ok": False, "error": str(result)}
+
+        return {
+            "ok": True,
+            "columns": result["columns"],
+            "rows": result["rows"],
+            "row_count": len(result["rows"]),
+        }
+
+    def save_csv_file(self, filename_hint, csv_content):
+        """
+        Open a native OS 'Save As' dialog so the user can choose where to save
+        the CSV file, then write the content to the chosen path.
+        Returns {"ok": True, "path": "..."} on success,
+                {"ok": False, "cancelled": True} if the user cancelled,
+                {"ok": False, "error": "..."} on write failure.
+        """
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            root = tk.Tk()
+            root.withdraw()          # hide the root window
+            root.attributes('-topmost', True)  # dialog appears on top of pywebview
+
+            filepath = filedialog.asksaveasfilename(
+                parent=root,
+                title="Save Query Results",
+                initialfile=filename_hint,
+                defaultextension=".csv",
+                filetypes=[
+                    ("CSV (comma-separated)", "*.csv"),
+                    ("Excel Workbook", "*.xlsx"),
+                    ("All files", "*.*"),
+                ],
+            )
+            root.destroy()
+
+            if not filepath:
+                return {"ok": False, "cancelled": True}
+
+            # Write UTF-8 BOM CSV so Excel opens it correctly as all-text
+            with open(filepath, "w", encoding="utf-8-sig", newline="") as f:
+                f.write(csv_content)
+
+            return {"ok": True, "path": filepath}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # Internal helpers
 
     def _clear_session(self):
@@ -330,11 +415,19 @@ class Api:
     def _is_admin(self):
         return self._role() == "admin"
 
+    def _user_permissions(self):
+        if self._is_admin():
+            return {"view": True, "run": True, "toggle": True}
+        user = database.get_user_by_id(self._current_user_id)
+        if not user:
+            return {"view": False, "run": False, "toggle": False}
+        return user.get("permissions", {})
+
     def _can_toggle_jobs(self):
-        return self._role() in {"admin", "ops"}
+        return self._user_permissions().get("toggle", False)
 
     def _has_global_job_access(self):
-        return self._role() in {"admin", "ops"}
+        return self._role() == "admin"
 
     def _can_access_server(self, server_id):
         if not self._is_authenticated():
@@ -361,8 +454,8 @@ class Api:
         allowed_job_names = self._allowed_job_names(server_id)
         if allowed_job_names is None:
             return jobs
-        allowed = set(allowed_job_names)
-        return [job for job in jobs if job.get("name") in allowed]
+        allowed = {str(n).strip().lower() for n in allowed_job_names if n}
+        return [job for job in jobs if str(job.get("name") or "").strip().lower() in allowed]
 
     def _can_view_job(self, server_id, job_name):
         if self._has_global_job_access():
@@ -376,6 +469,8 @@ class Api:
 
     def _can_run_job(self, server_id, job_name):
         if not self._is_authenticated():
+            return False
+        if not self._user_permissions().get("run", False):
             return False
         if self._has_global_job_access():
             return self._can_access_server(server_id)

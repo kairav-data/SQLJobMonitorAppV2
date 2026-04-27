@@ -2,6 +2,8 @@
    SQL Job Monitor — Light Minimalistic UI
    ──────────────────────────────────────────────────────────────────────────── */
 
+* { box-sizing: border-box; }
+
 /* ── Variables ── */
 :root {
   --w-name:       3fr;
@@ -200,7 +202,8 @@ body {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   border: none; cursor: pointer;
   font-family: var(--font); font-size: 12px; font-weight: 600;
-  padding: 6px 12px;
+  padding: 0 16px;
+  height: 34px;
   border-radius: var(--radius);
   transition: all .18s ease;
   outline: none; white-space: nowrap;
@@ -376,7 +379,7 @@ body {
   gap: 16px; flex-shrink:0;
 }
 .header-left { min-width: 0; flex:1; }
-.server-title { font-size: 16px; font-weight: 700; letter-spacing: -.2px; }
+.server-title { font-size: 14px; font-weight: 700; letter-spacing: -.2px; }
 .server-subtitle { font-size: 12px; color: var(--text-3); }
 .header-right { display:flex; align-items:center; gap:10px; flex-shrink:0; }
 
@@ -392,7 +395,8 @@ body {
   background: var(--surface);
   border: 1px solid var(--border2);
   border-radius: var(--radius);
-  padding: 6px 12px 6px 28px;
+  padding: 0 16px 0 32px;
+  height: 34px;
   width: 280px; color: var(--text);
   font-family: var(--font); font-size: 12px;
   outline: none; transition: border-color .2s, box-shadow .2s;
@@ -431,7 +435,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0 10px;
-  height: 40px; flex-shrink:0;
+  height: 30px; flex-shrink:0;
 }
 .th {
   font-size: 10px; font-weight: 700; color: var(--text-3);
@@ -462,8 +466,8 @@ body {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  margin-bottom: 2px;
-  padding: 5px 10px;
+  margin-bottom: 1px;
+  padding: 3px 10px;
   transition: background .15s, border-color .15s, transform .15s;
   animation: rowIn .25s ease both;
 }
@@ -502,11 +506,11 @@ body {
 
 /* Action buttons in row */
 .row-btn {
-  width:60px; height:28px;
+  width:60px; height:24px;
   border:1px solid rgba(99,102,241,.4);
   background: var(--primary-dim);
   color: var(--primary-h);
-  border-radius: 7px; font-size:12px; font-weight:600;
+  border-radius: 7px; font-size:11px; font-weight:600;
   cursor:pointer; transition:all .15s;
   font-family:var(--font);
 }
@@ -592,29 +596,30 @@ body {
 #um-list {
   max-height: 220px;
   overflow-y: auto;
-  margin-right: -8px;
-  padding-right: 8px;
+  margin-right: -4px;
+  padding-right: 4px;
+  overflow-x: hidden;
 }
 .user-list-header {
   position: sticky;
   top: 0;
   background: #ffffff;
   z-index: 10;
-  display:grid; grid-template-columns:1fr 90px 130px;
+  display:grid; grid-template-columns: minmax(180px, 1fr) 110px 240px;
   font-size:10px; font-weight:700; color:var(--text-3);
   text-transform:uppercase; letter-spacing:.5px;
-  padding: 8px 4px; border-bottom:1px solid var(--border);
+  padding: 8px 12px; border-bottom:1px solid var(--border);
 }
 .user-row {
-  display:grid; grid-template-columns:1fr 90px 130px;
+  display:grid; grid-template-columns: minmax(180px, 1fr) 110px 240px;
   align-items:center;
-  padding:10px 4px;
+  padding:10px 12px;
   border-bottom:1px solid var(--border);
   gap:8px;
 }
 .user-row:last-child { border-bottom:none; }
 .user-name { font-size:13px; font-weight:600; }
-.user-actions { display:flex; gap:6px; }
+.user-actions { display:flex; gap:6px; justify-content: flex-end; }
 
 /* ── Calendar ── */
 .cal-nav {
@@ -2510,8 +2515,7 @@ textarea.form-input {
   color: #dc2626;
 }
 
-.project-access-row,
-.user-row {
+.project-access-row {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
@@ -2529,7 +2533,7 @@ textarea.form-input {
 }
 
 .modal-box {
-  width: min(720px, 94vw);
+  width: min(800px, 96vw);
   border-radius: 24px;
   padding: 36px;
 }

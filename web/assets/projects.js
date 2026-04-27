@@ -76,7 +76,6 @@ function markPipelineDirty() {
     if (!canEditPipeline() || !S.activeProject) return;
     S.pipelineDirty = true;
     updateSavePipelineButton();
-    queuePipelineSave();
 }
 
 function getAutoRoutedEdge(sX, sY, sW, sH, tX, tY, tW, tH) {
@@ -195,9 +194,11 @@ function initProjects() {
     console.log('Initializing Project Listeners...');
     const tabJobs = $('tab-jobs');
     const tabProjects = $('tab-projects');
+    const tabSqlDownload = $('tab-sql-download');
 
     if (tabJobs) tabJobs.addEventListener('click', () => switchTab('jobs'));
     if (tabProjects) tabProjects.addEventListener('click', () => switchTab('projects'));
+    if (tabSqlDownload) tabSqlDownload.addEventListener('click', () => switchTab('sql-download'));
 
     const btnCreate = $('btn-create-project');
     if (btnCreate) btnCreate.addEventListener('click', openCreateProject);
@@ -211,38 +212,96 @@ function initProjects() {
     const btnRun = $('btn-run-pipeline');
     if (btnRun) btnRun.addEventListener('click', togglePipelineRun);
 
+    S.pipelineZoom = 1;
+    const btnZoomIn = $('btn-zoom-in');
+    const btnZoomOut = $('btn-zoom-out');
+    const canvasArea = $('pipeline-canvas');
+    if (btnZoomIn) btnZoomIn.addEventListener('click', () => setPipelineZoom(S.pipelineZoom + 0.1));
+    if (btnZoomOut) btnZoomOut.addEventListener('click', () => setPipelineZoom(S.pipelineZoom - 0.1));
+    if (canvasArea) {
+        canvasArea.addEventListener('wheel', e => {
+            if (e.ctrlKey) {
+                e.preventDefault();
+                setPipelineZoom(S.pipelineZoom - (e.deltaY > 0 ? 0.1 : -0.1));
+            }
+        });
+    }
+
+    const resizer = $('jobs-panel-resizer');
+    if (resizer) {
+        resizer.addEventListener('mousedown', e => {
+            S.isResizingPanel = true;
+            S.resizeStartX = e.clientX;
+            const panel = $('pipeline-jobs-panel');
+            S.resizeStartWidth = panel ? panel.offsetWidth : 280;
+            resizer.classList.add('dragging');
+            document.body.style.cursor = 'col-resize';
+        });
+    }
+
     document.addEventListener('mousemove', e => {
         if (S.isDraggingNode) handleNodeDrag(e);
         if (S.isDrawingEdge) handleEdgeDrag(e);
+        if (S.isResizingPanel) {
+            const panel = $('pipeline-jobs-panel');
+            if (panel) {
+                const diff = e.clientX - S.resizeStartX;
+                const newWidth = Math.max(200, Math.min(800, S.resizeStartWidth + diff));
+                panel.style.width = newWidth + 'px';
+            }
+        }
     });
 
     document.addEventListener('mouseup', e => {
         if (S.isDraggingNode) endNodeDrag();
         if (S.isDrawingEdge && !e.target.closest('.node-port')) cancelEdgeDraw();
+        if (S.isResizingPanel) {
+            S.isResizingPanel = false;
+            if (resizer) resizer.classList.remove('dragging');
+            document.body.style.cursor = '';
+        }
     });
+
+    // Init SQL Download panel
+    if (typeof initSqlDownload === 'function') initSqlDownload();
 }
 
 function switchTab(tab) {
     S.currentView = tab;
     const tJobs = $('tab-jobs');
     const tProjs = $('tab-projects');
+    const tSqlDl = $('tab-sql-download');
     if (tJobs) tJobs.classList.toggle('active', tab === 'jobs');
     if (tProjs) tProjs.classList.toggle('active', tab === 'projects');
+    if (tSqlDl) tSqlDl.classList.toggle('active', tab === 'sql-download');
 
     const vJobs = $('view-jobs');
     const vProjs = $('view-projects');
+    const vSqlDl = $('view-sql-download');
+
+    // Hide all panels first
+    if (vJobs) vJobs.style.display = 'none';
+    if (vProjs) vProjs.classList.add('hidden');
+    if (vSqlDl) vSqlDl.classList.add('hidden');
 
     if (tab === 'jobs') {
         stopProjectSync();
         if (vJobs) vJobs.style.display = 'flex';
-        if (vProjs) vProjs.classList.add('hidden');
         return;
     }
 
-    if (vJobs) vJobs.style.display = 'none';
-    if (vProjs) vProjs.classList.remove('hidden');
-    startProjectSync();
-    loadProjects();
+    if (tab === 'projects') {
+        if (vProjs) vProjs.classList.remove('hidden');
+        startProjectSync();
+        loadProjects();
+        return;
+    }
+
+    if (tab === 'sql-download') {
+        stopProjectSync();
+        if (vSqlDl) vSqlDl.classList.remove('hidden');
+        return;
+    }
 }
 
 async function loadProjects() {
@@ -316,12 +375,29 @@ function openCreateProject() {
         return;
     }
 
+    // Set width on the actual modal container
+    const mBox = document.getElementById('modal-box');
+    if (mBox) {
+        mBox.style.width = '460px';
+        mBox.style.padding = '24px 32px';
+    }
+
     const box = el('div');
     box.innerHTML = `
-    <div class="modal-title">Create Project</div>
-    <div class="form-group"><label class="form-label">Project Name *</label><input id="cp-name" class="form-input"></div>
-    <div class="form-group"><label class="form-label">Description</label><input id="cp-desc" class="form-input"></div>
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-primary" id="cp-save">Create</button></div>`;
+    <div class="modal-title" style="margin-bottom: 6px;">Create New Project</div>
+    <div class="modal-sub" style="margin-bottom: 24px;">Organize your jobs into a structured pipeline workflow.</div>
+    <div class="form-group">
+      <label class="form-label">Project Name <span style="color:var(--danger)">*</span></label>
+      <input id="cp-name" class="form-input" placeholder="e.g. Nightly ETL Processing" style="width:100%">
+    </div>
+    <div class="form-group" style="margin-bottom: 28px;">
+      <label class="form-label">Description</label>
+      <input id="cp-desc" class="form-input" placeholder="Optional description of this project's purpose" style="width:100%">
+    </div>
+    <div class="modal-footer" style="margin-top: 0;">
+      <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
+      <button class="btn btn-primary" id="cp-save">Create Project</button>
+    </div>`;
     showModal(box);
 
     document.getElementById('cp-save').addEventListener('click', async () => {
@@ -329,7 +405,15 @@ function openCreateProject() {
         const desc = document.getElementById('cp-desc').value.trim();
         if (!name) return;
 
+        const btn = document.getElementById('cp-save');
+        btn.disabled = true;
+        btn.textContent = 'Creating...';
+
         const res = await api().add_project(name, desc, S.activeServer.id);
+        
+        btn.disabled = false;
+        btn.textContent = 'Create Project';
+
         if (res && res.ok) {
             applyProjectsFromServer(res.projects, { silent: true });
             hideModal();
@@ -347,13 +431,29 @@ function openPipeline(project) {
     const pipeView = $('pipeline-view');
     if (listView) listView.style.display = 'none';
     if (pipeView) pipeView.classList.remove('hidden');
+    
+    const resizer = $('jobs-panel-resizer');
+    if (resizer) resizer.classList.remove('hidden');
 
     const title = $('pipeline-title');
     if (title) title.textContent = project.name;
 
+    setPipelineZoom(1);
     updateAvailableJobsList();
     renderPipeline();
     updateSavePipelineButton();
+}
+
+function setPipelineZoom(level) {
+    if (level < 0.2) level = 0.2;
+    if (level > 3) level = 3;
+    S.pipelineZoom = level;
+    
+    const wrapper = $('pipeline-zoom-wrapper');
+    if (wrapper) wrapper.style.transform = `scale(${S.pipelineZoom})`;
+    
+    const label = $('pipeline-zoom-level');
+    if (label) label.textContent = Math.round(S.pipelineZoom * 100) + '%';
 }
 
 function closePipeline() {
@@ -367,6 +467,9 @@ function closePipeline() {
     const pipeView = $('pipeline-view');
     if (listView) listView.style.display = 'flex';
     if (pipeView) pipeView.classList.add('hidden');
+    
+    const resizer = $('jobs-panel-resizer');
+    if (resizer) resizer.classList.add('hidden');
 
     renderProjects();
     updateSavePipelineButton();
@@ -509,8 +612,8 @@ function renderPipeline() {
             S.dragMoved = false;
 
             S.dragOffset = {
-                x: event.clientX - rect.left,
-                y: event.clientY - rect.top
+                x: (event.clientX - rect.left) / S.pipelineZoom,
+                y: (event.clientY - rect.top) / S.pipelineZoom
             };
             node.classList.add('dragging');
         });
@@ -579,8 +682,8 @@ function handleNodeDrag(event) {
     if (!canvasArea) return;
 
     const parentRect = canvasArea.getBoundingClientRect();
-    let nextX = event.clientX - parentRect.left - S.dragOffset.x + canvasArea.scrollLeft;
-    let nextY = event.clientY - parentRect.top - S.dragOffset.y + canvasArea.scrollTop;
+    let nextX = (event.clientX - parentRect.left + canvasArea.scrollLeft) / S.pipelineZoom - S.dragOffset.x;
+    let nextY = (event.clientY - parentRect.top + canvasArea.scrollTop) / S.pipelineZoom - S.dragOffset.y;
 
     if (nextX < 0) nextX = 0;
     if (nextY < 0) nextY = 0;
@@ -666,8 +769,8 @@ function handleEdgeDrag(event) {
     const sWidth = sNodeEl ? sNodeEl.offsetWidth : 180;
     const sHeight = sNodeEl ? sNodeEl.offsetHeight : 86;
     
-    const mouseX = event.clientX - parentRect.left + canvasArea.scrollLeft;
-    const mouseY = event.clientY - parentRect.top + canvasArea.scrollTop;
+    const mouseX = (event.clientX - parentRect.left + canvasArea.scrollLeft) / S.pipelineZoom;
+    const mouseY = (event.clientY - parentRect.top + canvasArea.scrollTop) / S.pipelineZoom;
 
     const pathD = getAutoRoutedEdge(sourceNode.x, sourceNode.y, sWidth, sHeight, mouseX, mouseY, 0, 0);
     S.tempEdgePath.setAttribute('d', pathD);

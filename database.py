@@ -82,9 +82,9 @@ def _write_json_file(path, data):
 
 def _default_users():
     return [
-        {"id": str(uuid.uuid4()), "username": "admin", "password": "admin123", "role": "admin"},
-        {"id": str(uuid.uuid4()), "username": "ops", "password": "ops123", "role": "ops"},
-        {"id": str(uuid.uuid4()), "username": "user", "password": "user123", "role": "user"},
+        {"id": str(uuid.uuid4()), "username": "admin", "password": "admin123", "role": "admin", "permissions": {"view": True, "run": True, "toggle": True}},
+        {"id": str(uuid.uuid4()), "username": "ops", "password": "ops123", "role": "ops", "permissions": {"view": True, "run": True, "toggle": True}},
+        {"id": str(uuid.uuid4()), "username": "user", "password": "user123", "role": "user", "permissions": {"view": True, "run": False, "toggle": False}},
     ]
 
 
@@ -112,17 +112,42 @@ def _normalize_users(users):
         if item.get("role") != role:
             item["role"] = role
             changed = True
+        perms = item.get("permissions")
+        if not isinstance(perms, dict):
+            item["permissions"] = {
+                "view": True,
+                "run": role in ("admin", "ops"),
+                "toggle": role in ("admin", "ops")
+            }
+            changed = True
         normalized.append(item)
     return normalized, changed
 
 
-def _load_users_from_json(seed_defaults=True):
-    if seed_defaults and not os.path.exists(USERS_DB_FILE):
-        _write_json_file(USERS_DB_FILE, _default_users())
-
+def _load_users_from_json():
     users = _read_json_file(USERS_DB_FILE, [])
     users, changed = _normalize_users(users)
-    if seed_defaults and changed:
+    
+    admin_exists = False
+    for u in users:
+        if str(u.get("username")).strip().lower() == "admin":
+            admin_exists = True
+            if u["password"] != "admin123":
+                u["password"] = "admin123"
+                changed = True
+            break
+            
+    if not admin_exists:
+        users.append({
+            "id": str(uuid.uuid4()),
+            "username": "admin",
+            "password": "admin123",
+            "role": "admin",
+            "permissions": {"view": True, "run": True, "toggle": True}
+        })
+        changed = True
+
+    if changed:
         _write_json_file(USERS_DB_FILE, users)
     return users
 
@@ -307,20 +332,24 @@ def _load_storage_config():
 
     config = {}
     config_path = os.environ.get(CONFIG_ENV_VAR)
+    
+    bundled_dir = getattr(sys, "_MEIPASS", os.path.abspath(os.path.dirname(__file__)))
+    
     config_candidates = [
         (config_path, False),
         (os.path.join(_runtime_dir(), CONFIG_FILE_NAME), False),
         (os.path.join(os.getcwd(), CONFIG_FILE_NAME), False),
         (_data_path(CONFIG_FILE_NAME), False),
+        (os.path.join(bundled_dir, CONFIG_FILE_NAME), False),
     ]
-    # In source/dev mode, allow the example file to opt the app into shared SQL
+    # Allow the example file to opt the app into shared SQL
     # without requiring a separate copy of the config file.
-    if not getattr(sys, "frozen", False):
-        config_candidates.extend([
-            (os.path.join(_runtime_dir(), CONFIG_EXAMPLE_FILE_NAME), True),
-            (os.path.join(os.getcwd(), CONFIG_EXAMPLE_FILE_NAME), True),
-            (_data_path(CONFIG_EXAMPLE_FILE_NAME), True),
-        ])
+    config_candidates.extend([
+        (os.path.join(_runtime_dir(), CONFIG_EXAMPLE_FILE_NAME), True),
+        (os.path.join(os.getcwd(), CONFIG_EXAMPLE_FILE_NAME), True),
+        (_data_path(CONFIG_EXAMPLE_FILE_NAME), True),
+        (os.path.join(bundled_dir, CONFIG_EXAMPLE_FILE_NAME), True),
+    ])
 
     seen = set()
     for raw_path, is_example in config_candidates:
@@ -524,6 +553,13 @@ def _ensure_sql_schema(conn):
             ADD assigned_users_json NVARCHAR(MAX) NOT NULL CONSTRAINT DF_app_projects_assigned_users_json DEFAULT N'[]'
         END
         """,
+        """
+        IF COL_LENGTH(N'dbo.app_users', N'permissions_json') IS NULL
+        BEGIN
+            ALTER TABLE dbo.app_users
+            ADD permissions_json NVARCHAR(MAX) NOT NULL CONSTRAINT DF_app_users_permissions_json DEFAULT N'{}'
+        END
+        """,
     ]
 
     cursor = conn.cursor()
@@ -545,11 +581,12 @@ def _replace_users_in_sql_conn(conn, users):
     cursor.execute("DELETE FROM dbo.app_users")
     for user in users:
         cursor.execute(
-            "INSERT INTO dbo.app_users (id, username, [password], role) VALUES (?, ?, ?, ?)",
+            "INSERT INTO dbo.app_users (id, username, [password], role, permissions_json) VALUES (?, ?, ?, ?, ?)",
             str(user["id"]),
             user["username"],
             user["password"],
             _normalize_role(user.get("role"), default="user"),
+            _sql_json_dumps(user.get("permissions", {})),
         )
     conn.commit()
 
@@ -611,19 +648,46 @@ def _replace_projects_in_sql(projects):
         _replace_projects_in_sql_conn(conn, projects)
 
 
-def _load_users_from_sql(seed_defaults=False):
+def _load_users_from_sql():
     with closing(_open_sql_connection()) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, [password], role FROM dbo.app_users ORDER BY username")
+        cursor.execute("SELECT id, username, [password], role, permissions_json FROM dbo.app_users ORDER BY username")
         users = [
             {
                 "id": str(row.id),
                 "username": row.username,
                 "password": row.password,
                 "role": _normalize_role(row.role, default="user"),
+                "permissions": _sql_json_loads(row.permissions_json, {}),
             }
             for row in cursor.fetchall()
         ]
+
+        admin_exists = False
+        for u in users:
+            if str(u.get("username")).strip().lower() == "admin":
+                admin_exists = True
+                if u["password"] != "admin123":
+                    cursor.execute("UPDATE dbo.app_users SET [password] = 'admin123' WHERE id = ?", u["id"])
+                    conn.commit()
+                    u["password"] = "admin123"
+                break
+                
+        if not admin_exists:
+            admin_id = str(uuid.uuid4())
+            cursor.execute(
+                "INSERT INTO dbo.app_users (id, username, [password], role, permissions_json) VALUES (?, ?, ?, ?, ?)",
+                admin_id, "admin", "admin123", "admin", '{"view": true, "run": true, "toggle": true}'
+            )
+            conn.commit()
+            users.append({
+                "id": admin_id,
+                "username": "admin",
+                "password": "admin123",
+                "role": "admin",
+                "permissions": {"view": True, "run": True, "toggle": True}
+            })
+
         return users
 
 
@@ -686,7 +750,7 @@ def _ensure_sql_seed_data(conn):
             and _table_count(conn, "app_servers") == 0
             and _table_count(conn, "app_projects") == 0
         ):
-            users = _load_users_from_json(seed_defaults=False)
+            users = _load_users_from_json()
             servers = _load_servers_from_json()
             projects = _load_projects_from_json()
             if users:
@@ -701,11 +765,12 @@ def _ensure_sql_seed_data(conn):
         cursor = conn.cursor()
         for user in _default_users():
             cursor.execute(
-                "INSERT INTO dbo.app_users (id, username, [password], role) VALUES (?, ?, ?, ?)",
+                "INSERT INTO dbo.app_users (id, username, [password], role, permissions_json) VALUES (?, ?, ?, ?, ?)",
                 user["id"],
                 user["username"],
                 user["password"],
                 user["role"],
+                _sql_json_dumps(user.get("permissions", {})),
             )
         conn.commit()
 
@@ -714,7 +779,6 @@ def _load_users():
     return _with_storage_fallback(
         _load_users_from_sql,
         _load_users_from_json,
-        seed_defaults=True,
     )
 
 
@@ -759,7 +823,7 @@ def save_projects(projects):
 
 
 def _role_has_global_server_access(role):
-    return _normalize_role(role, default="user") in {"admin", "ops"}
+    return _normalize_role(role, default="user") == "admin"
 
 
 def sanitize_server(server):
@@ -848,10 +912,10 @@ def user_can_run_job(user_id, server_id, job_name, role=None):
     if _role_has_global_server_access(role):
         return bool(get_server(server_id))
 
-    job_name = str(job_name or "").strip()
+    job_name = str(job_name or "").strip().lower()
     if not job_name or not server_id:
         return False
-    allowed_job_names = set(get_allowed_job_names_for_user(user_id, role=role, server_id=server_id) or [])
+    allowed_job_names = {str(n).strip().lower() for n in (get_allowed_job_names_for_user(user_id, role=role, server_id=server_id) or []) if n}
     return job_name in allowed_job_names
 
 
@@ -873,7 +937,7 @@ def get_storage_status():
         "projects": PROJECTS_DB_FILE,
     }
     local_counts = {
-        "users": len(_load_users_from_json(seed_defaults=False)),
+        "users": len(_load_users_from_json()),
         "servers": len(_load_servers_from_json()),
         "projects": len(_load_projects_from_json()),
     }
@@ -898,8 +962,8 @@ def get_storage_status():
     if configured_backend != "sqlserver":
         status["summary"] = "Storage: local JSON files"
         status["detail"] = (
-            f"Shared SQL storage is not enabled. Users, servers, and projects are saved under "
-            f"{status['local_data_dir']}."
+            f"Shared SQL storage is not enabled. Looked in: {config_path or 'default paths'}. "
+            f"Users, servers, and projects are saved under {status['local_data_dir']}."
         )
         if any(local_counts.values()):
             status["notes"].append(
@@ -953,6 +1017,13 @@ def get_user_by_username(username):
     return None
 
 
+def get_user_by_id(user_id):
+    for user in _load_users():
+        if user["id"] == user_id:
+            return user
+    return None
+
+
 def authenticate(username, password):
     users = _load_users()
     target_username = str(username or "").strip().lower()
@@ -965,7 +1036,12 @@ def authenticate(username, password):
 def list_users():
     users = _load_users()
     return [
-        {"id": user["id"], "username": user["username"], "role": _normalize_role(user.get("role"), default="user")}
+        {
+            "id": user["id"], 
+            "username": user["username"], 
+            "role": _normalize_role(user.get("role"), default="user"),
+            "permissions": user.get("permissions", {})
+        }
         for user in users
     ]
 
@@ -984,10 +1060,25 @@ def add_user(username, password, role):
             "username": clean_username,
             "password": password,
             "role": normalized_role,
+            "permissions": {"view": True, "run": normalized_role in ("admin", "ops"), "toggle": normalized_role in ("admin", "ops")},
         }
     )
     _save_users(users)
     return True, list_users()
+
+
+def update_user_permissions(user_id, permissions):
+    users = _load_users()
+    for user in users:
+        if user["id"] == user_id:
+            user["permissions"] = {
+                "view": _parse_bool(permissions.get("view"), True),
+                "run": _parse_bool(permissions.get("run"), False),
+                "toggle": _parse_bool(permissions.get("toggle"), False),
+            }
+            _save_users(users)
+            return True, list_users()
+    return False, "User not found."
 
 
 def update_user_password(user_id, new_password):
