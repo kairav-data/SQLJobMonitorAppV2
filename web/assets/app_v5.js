@@ -77,15 +77,70 @@ var canToggleJobs = () => {
     if (isAdmin()) return true;
     return S.permissions ? S.permissions.toggle : false;
 };
+var canSqlDownload = () => {
+    if (isAdmin()) return true;
+    return S.permissions ? S.permissions.sql_download : false;
+};
+var canSqlUpdate = () => {
+    if (isAdmin()) return true;
+    return S.permissions ? S.permissions.sql_update : false;
+};
 
 function setAdminOnlyVisibility(isVisible) {
     const method = isVisible ? 'remove' : 'add';
+    // Handle specific IDs
     ['btn-add-server', 'btn-manage-users', 'btn-create-project', 'btn-save-pipeline', 'pipeline-jobs-panel']
         .forEach(id => {
             const node = $(id);
             if (node) node.classList[method]('hidden');
         });
+    
+    // Handle all .admin-only classes
+    document.querySelectorAll('.admin-only').forEach(el => {
+        el.classList[method]('hidden');
+    });
 }
+
+
+function updateTabsVisibility() {
+    const tabSql = $('tab-sql-operations');
+    if (tabSql) {
+        const hasSqlAccess = canSqlDownload() || canSqlUpdate();
+        tabSql.classList.toggle('hidden', !hasSqlAccess);
+    }
+    updateSqlPermissionsUI();
+}
+
+function updateSqlPermissionsUI() {
+    const btnDl = $('sql-mode-download');
+    const btnUp = $('sql-mode-update');
+    const pnlDl = $('sql-panel-download');
+    const pnlUp = $('sql-panel-update');
+
+    if (!btnDl || !btnUp) return;
+
+    const hasDl = canSqlDownload();
+    const hasUp = canSqlUpdate();
+
+    btnDl.classList.toggle('hidden', !hasDl);
+    btnUp.classList.toggle('hidden', !hasUp);
+
+    // If only one is available, ensure we switch to the right panel
+    if (hasUp && !hasDl) {
+        btnUp.classList.add('active');
+        btnDl.classList.remove('active');
+        pnlUp.classList.remove('hidden');
+        pnlDl.classList.add('hidden');
+        if (typeof loadSqlTemplates === 'function') loadSqlTemplates();
+    } else if (hasDl) {
+        // Default to Download if available
+        btnDl.classList.add('active');
+        btnUp.classList.remove('active');
+        pnlDl.classList.remove('hidden');
+        pnlUp.classList.add('hidden');
+    }
+}
+
 
 function updateActiveDatePill() {
     const pill = $('active-date-pill');
@@ -326,7 +381,7 @@ async function doLogin() {
         S.role = normalizeRole(res.role);
         S.userId = res.user_id;
         S.username = res.username;
-        S.permissions = res.permissions || {view: false, run: false, toggle: false};
+        S.permissions = res.permissions || {view: false, run: false, toggle: false, sql_download: false, sql_update: false};
         S.defaultServerId = res.default_server_id || null;
         S.defaultProjectId = res.default_project_id || null;
         await showDashboard();
@@ -393,6 +448,7 @@ async function showDashboard() {
     badge.textContent = normalizeRole(S.role);
     badge.className = 'role-badge ' + normalizeRole(S.role);
     setAdminOnlyVisibility(isAdmin());
+    updateTabsVisibility();
 
     await refreshServers();
     await refreshStorageStatus();
@@ -1138,49 +1194,71 @@ async function renderUserList() {
 
 function changeAccess(userId, username, perms) {
     const box = el('div');
-    const pView = perms.view !== false;
-    const pRun = perms.run === true;
-    const pToggle = perms.toggle === true;
+    const pView        = perms.view !== false;
+    const pRun         = perms.run === true;
+    const pToggle      = perms.toggle === true;
+    const pSqlDownload = perms.sql_download === true;
+    const pSqlUpdate   = perms.sql_update === true;
     
     box.innerHTML = `
     <div class="modal-title">⚙️ Access Permissions</div>
     <div class="modal-sub">Granular access for <strong>${username}</strong></div>
-    <div style="display:flex; flex-direction:column; gap:10px; margin: 15px 0;">
-      <label style="display:flex; align-items:center; gap:8px;">
-        <input type="checkbox" id="chk-view" ${pView ? 'checked' : ''}> Can View Jobs & Projects
+
+    <div style="display:flex;flex-direction:column;gap:4px;margin:16px 0 8px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:6px;">Jobs</div>
+      <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:var(--bg-alt);">
+        <input type="checkbox" id="chk-view" ${pView ? 'checked' : ''}>
+        <span><strong>View Jobs &amp; Projects</strong> <span style="color:var(--text-3);font-size:12px;">— see jobs, history, pipeline</span></span>
       </label>
-      <label style="display:flex; align-items:center; gap:8px;">
-        <input type="checkbox" id="chk-run" ${pRun ? 'checked' : ''}> Can Run Jobs
+      <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:var(--bg-alt);">
+        <input type="checkbox" id="chk-run" ${pRun ? 'checked' : ''}>
+        <span><strong>Run Jobs</strong> <span style="color:var(--text-3);font-size:12px;">— manually trigger SQL Agent jobs</span></span>
       </label>
-      <label style="display:flex; align-items:center; gap:8px;">
-        <input type="checkbox" id="chk-toggle" ${pToggle ? 'checked' : ''}> Can Enable/Disable Jobs
+      <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:var(--bg-alt);">
+        <input type="checkbox" id="chk-toggle" ${pToggle ? 'checked' : ''}>
+        <span><strong>Enable / Disable Jobs</strong> <span style="color:var(--text-3);font-size:12px;">— toggle job enabled state</span></span>
       </label>
     </div>
-    <p id="acc-msg" style="font-size:12px;min-height:16px"></p>
+
+    <div style="display:flex;flex-direction:column;gap:4px;margin:8px 0 8px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:6px;">SQL Operations</div>
+      <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:var(--bg-alt);">
+        <input type="checkbox" id="chk-sql-dl" ${pSqlDownload ? 'checked' : ''}>
+        <span><strong>SQL Download</strong> <span style="color:var(--text-3);font-size:12px;">— run SELECT queries &amp; export results</span></span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:var(--bg-alt);">
+        <input type="checkbox" id="chk-sql-upd" ${pSqlUpdate ? 'checked' : ''}>
+        <span><strong>SQL Update</strong> <span style="color:var(--text-3);font-size:12px;">— execute admin-approved update templates</span></span>
+      </label>
+    </div>
+
+    <p id="acc-msg" style="font-size:12px;min-height:16px;margin-top:4px;"></p>
     <div class="modal-footer">
       <button class="btn btn-ghost" id="acc-back">← Back</button>
-      <button class="btn btn-primary" id="acc-save">Save</button>
+      <button class="btn btn-primary" id="acc-save">Save Permissions</button>
     </div>`;
     showModal(box, false);
     document.getElementById('acc-back').addEventListener('click', openUserManagement);
     document.getElementById('acc-save').addEventListener('click', async () => {
         const newPerms = {
-            view: document.getElementById('chk-view').checked,
-            run: document.getElementById('chk-run').checked,
-            toggle: document.getElementById('chk-toggle').checked
+            view:         document.getElementById('chk-view').checked,
+            run:          document.getElementById('chk-run').checked,
+            toggle:       document.getElementById('chk-toggle').checked,
+            sql_download: document.getElementById('chk-sql-dl').checked,
+            sql_update:   document.getElementById('chk-sql-upd').checked,
         };
         const msg = document.getElementById('acc-msg');
         msg.textContent = 'Saving...';
         msg.style.color = 'var(--text-2)';
-        
+
         const btn = document.getElementById('acc-save');
         btn.disabled = true;
         btn.textContent = 'Saving...';
-        
+
         const res = await api().update_user_permissions(userId, newPerms);
-        
+
         btn.disabled = false;
-        btn.textContent = 'Save';
+        btn.textContent = 'Save Permissions';
         
         if (res.ok) { 
             toast(`Permissions updated for '${username}'.`, 'success'); 
@@ -1581,4 +1659,459 @@ function setSqlRowCount(txt) {
 
 
 
+
+
+/* ─── SQL Operations (Download & Update) ─────────────────────────────────── */
+
+let sqlTemplates = [];
+let activeSqlTemplateId = null;
+
+function initSqlOperations() {
+    // Mode toggles
+    const btnDl = $('sql-mode-download');
+    const btnUp = $('sql-mode-update');
+    const pnlDl = $('sql-panel-download');
+    const pnlUp = $('sql-panel-update');
+
+    if (btnDl && btnUp) {
+        btnDl.addEventListener('click', () => {
+            btnDl.classList.add('active');
+            btnUp.classList.remove('active');
+            pnlDl.classList.remove('hidden');
+            pnlUp.classList.add('hidden');
+        });
+        btnUp.addEventListener('click', () => {
+            btnUp.classList.add('active');
+            btnDl.classList.remove('active');
+            pnlUp.classList.remove('hidden');
+            pnlDl.classList.add('hidden');
+            loadSqlTemplates();
+        });
+    }
+
+    // New Template (Admin)
+    const btnNewTpl = $('btn-new-sql-template');
+    if (btnNewTpl) {
+        btnNewTpl.addEventListener('click', () => openTemplateEditor(null));
+    }
+
+    // Save/Cancel Template (Admin)
+    const btnSaveTpl = $('btn-save-template');
+    const btnCancelTpl = $('btn-cancel-template');
+    if (btnSaveTpl) btnSaveTpl.addEventListener('click', saveSqlTemplate);
+    if (btnCancelTpl) btnCancelTpl.addEventListener('click', closeTemplateEditor);
+
+    // Delete Template (Admin)
+    const btnDelTpl = $('btn-delete-template');
+    const btnEditTpl = $('btn-edit-template');
+    if (btnEditTpl) btnEditTpl.addEventListener('click', () => openTemplateEditor(sqlTemplates.find(t => t.id === activeSqlTemplateId)));
+    if (btnDelTpl) btnDelTpl.addEventListener('click', deleteSqlTemplate);
+
+    // Execute Template
+    const btnRunUpdate = $('btn-run-update');
+    if (btnRunUpdate) btnRunUpdate.addEventListener('click', executeSqlUpdate);
+    
+    // Live preview
+    const inpSet = $('exec-inp-set');
+    const inpWhere = $('exec-inp-where');
+    if (inpSet) inpSet.addEventListener('input', updateSqlPreview);
+    if (inpWhere) inpWhere.addEventListener('input', updateSqlPreview);
+
+    // SQL Download bindings (if any were not bound)
+    const btnSqlRun = $('btn-sql-run');
+    if (btnSqlRun) {
+        // remove existing listeners if any
+        const newBtnSqlRun = btnSqlRun.cloneNode(true);
+        btnSqlRun.parentNode.replaceChild(newBtnSqlRun, btnSqlRun);
+        newBtnSqlRun.addEventListener('click', runSqlDownload);
+    }
+    
+    const inpQuery = $('sql-query-input');
+    if (inpQuery) {
+        inpQuery.addEventListener('input', () => {
+            const val = inpQuery.value.trim();
+            const btn = $('btn-sql-run');
+            if (btn) btn.disabled = !val || !S.activeServer;
+        });
+    }
+
+    const btnSqlDl = $('btn-sql-download');
+    if (btnSqlDl) {
+        const newBtnSqlDl = btnSqlDl.cloneNode(true);
+        btnSqlDl.parentNode.replaceChild(newBtnSqlDl, btnSqlDl);
+        newBtnSqlDl.addEventListener('click', downloadSqlExcel);
+    }
+    
+    const btnSqlClear = $('btn-sql-clear');
+    if (btnSqlClear) {
+        const newBtnSqlClear = btnSqlClear.cloneNode(true);
+        btnSqlClear.parentNode.replaceChild(newBtnSqlClear, btnSqlClear);
+        newBtnSqlClear.addEventListener('click', clearSqlDownload);
+    }
+}
+
+async function runSqlDownload() {
+    const query = $('sql-query-input').value.trim();
+    if (!query || !S.activeServer) return;
+
+    const btn = $('btn-sql-run');
+    btn.disabled = true;
+    btn.textContent = 'Running...';
+    $('sql-status-msg').textContent = 'Executing query...';
+    $('sql-status-msg').className = 'sql-status-msg';
+
+    try {
+        const res = await api().execute_sql_download(S.activeServer.id, query);
+        if (res && res.ok) {
+            window.lastSqlDownloadCsv = formatAsCsv(res.columns, res.rows);
+            window.lastSqlDownloadHint = 'Query_Results_' + S.activeServer.alias.replace(/\s+/g, '_') + '.csv';
+            renderSqlTable(res.columns, res.rows);
+            $('sql-row-count').textContent = res.row_count + ' rows';
+            $('sql-status-msg').textContent = 'Success';
+            $('sql-status-msg').className = 'sql-status-msg success';
+            $('btn-sql-download').disabled = false;
+        } else {
+            $('sql-status-msg').textContent = res.error || 'Query failed';
+            $('sql-status-msg').className = 'sql-status-msg error';
+            $('sql-row-count').textContent = '';
+            $('btn-sql-download').disabled = true;
+        }
+    } catch (err) {
+        $('sql-status-msg').textContent = 'System error';
+        $('sql-status-msg').className = 'sql-status-msg error';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '▶ Run Query';
+    }
+}
+
+function formatAsCsv(columns, rows) {
+    const escapeCsv = val => {
+        if (val === null || val === undefined) return '';
+        let str = String(val);
+        if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
+            str = '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+    };
+    let csv = columns.map(escapeCsv).join(',') + '\n';
+    rows.forEach(row => {
+        csv += row.map(escapeCsv).join(',') + '\n';
+    });
+    return csv;
+}
+
+function renderSqlTable(columns, rows) {
+    $('sql-result-empty').classList.add('hidden');
+    $('sql-result-table-wrap').classList.remove('hidden');
+    
+    const table = $('sql-result-table');
+    table.innerHTML = '';
+    
+    const thead = document.createElement('thead');
+    const thr = document.createElement('tr');
+    columns.forEach(col => {
+        const th = document.createElement('th');
+        th.textContent = col;
+        thr.appendChild(th);
+    });
+    thead.appendChild(thr);
+    table.appendChild(thead);
+    
+    const tbody = document.createElement('tbody');
+    rows.forEach(row => {
+        const tr = document.createElement('tr');
+        row.forEach(cell => {
+            const td = document.createElement('td');
+            td.textContent = cell;
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+}
+
+async function downloadSqlExcel() {
+    if (!window.lastSqlDownloadCsv) return;
+    const btn = $('btn-sql-download');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    try {
+        const res = await api().save_csv_file(window.lastSqlDownloadHint, window.lastSqlDownloadCsv);
+        if (res && res.ok) {
+            toast('Results saved to ' + res.path, 'success');
+        } else if (res && !res.cancelled) {
+            toast('Failed to save file: ' + res.error, 'error');
+        }
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '⬇ Download Excel';
+    }
+}
+
+function clearSqlDownload() {
+    $('sql-query-input').value = '';
+    $('sql-result-table').innerHTML = '';
+    $('sql-result-table-wrap').classList.add('hidden');
+    $('sql-result-empty').classList.remove('hidden');
+    $('sql-status-msg').textContent = '';
+    $('sql-row-count').textContent = '';
+    $('btn-sql-run').disabled = true;
+    $('btn-sql-download').disabled = true;
+    window.lastSqlDownloadCsv = null;
+}
+
+// SQL Update Templates
+
+async function loadSqlTemplates() {
+    try {
+        const res = await api().get_sql_templates();
+        if (res && res.ok) {
+            sqlTemplates = res.templates || [];
+            renderSqlTemplatesList();
+            
+            // Check admin status to show new template button
+            const isAdmin = String(S.role || '').trim().toLowerCase() === 'admin';
+            const btnNewTpl = $('btn-new-sql-template');
+            if (btnNewTpl) {
+                if (isAdmin) btnNewTpl.classList.remove('hidden');
+                else btnNewTpl.classList.add('hidden');
+            }
+            
+            // Re-select active template if still exists
+            if (activeSqlTemplateId) {
+                const stillExists = sqlTemplates.find(t => t.id === activeSqlTemplateId);
+                if (!stillExists) {
+                    activeSqlTemplateId = null;
+                    $('sql-template-empty').classList.remove('hidden');
+                    $('sql-template-editor').classList.add('hidden');
+                    $('sql-template-executor').classList.add('hidden');
+                } else {
+                    openTemplateExecutor(stillExists);
+                }
+            } else {
+                $('sql-template-empty').classList.remove('hidden');
+                $('sql-template-editor').classList.add('hidden');
+                $('sql-template-executor').classList.add('hidden');
+            }
+        }
+    } catch (err) {
+        console.error('Error loading SQL templates:', err);
+    }
+}
+
+function renderSqlTemplatesList() {
+    const list = $('sql-templates-list');
+    if (!list) return;
+    list.innerHTML = '';
+    
+    if (!sqlTemplates.length) {
+        list.innerHTML = '<div class="empty-state" style="padding: 20px; text-align: center; color: var(--text-3); font-size: 12px;">No templates available</div>';
+        return;
+    }
+    
+    sqlTemplates.forEach(t => {
+        const item = document.createElement('div');
+        item.className = 'sql-template-item' + (activeSqlTemplateId === t.id ? ' active' : '');
+        item.innerHTML = `
+            <div class="tpl-name">${t.name}</div>
+            <div class="tpl-table">${t.target_table}</div>
+        `;
+        item.addEventListener('click', () => openTemplateExecutor(t));
+        list.appendChild(item);
+    });
+}
+
+function openTemplateEditor(template) {
+    activeSqlTemplateId = template ? template.id : null;
+    renderSqlTemplatesList(); // Remove active state
+    
+    $('sql-template-empty').classList.add('hidden');
+    $('sql-template-executor').classList.add('hidden');
+    $('sql-template-editor').classList.remove('hidden');
+    
+    $('template-editor-title').textContent = template ? 'Edit Template' : 'Create Template';
+    $('tpl-inp-name').value = template ? template.name : '';
+    $('tpl-inp-table').value = template ? template.target_table : '';
+    $('tpl-inp-set').value = template ? template.set_clause_template : '';
+    $('tpl-inp-where').value = template ? template.where_clause_template : '';
+}
+
+function closeTemplateEditor() {
+    $('sql-template-editor').classList.add('hidden');
+    activeSqlTemplateId = null;
+    loadSqlTemplates();
+}
+
+async function saveSqlTemplate() {
+    const name = $('tpl-inp-name').value.trim();
+    const table = $('tpl-inp-table').value.trim();
+    const setClause = $('tpl-inp-set').value.trim();
+    const whereClause = $('tpl-inp-where').value.trim();
+    
+    if (!name || !table || !setClause || !whereClause) {
+        toast('All fields are required.', 'warning');
+        return;
+    }
+    
+    const btn = $('btn-save-template');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    
+    try {
+        let res;
+        if (activeSqlTemplateId) {
+            res = await api().edit_sql_template(activeSqlTemplateId, name, table, setClause, whereClause);
+        } else {
+            res = await api().add_sql_template(name, table, setClause, whereClause);
+        }
+        if (res && res.ok) {
+            toast('Template saved successfully.', 'success');
+            sqlTemplates = res.templates || [];
+            closeTemplateEditor();
+        } else {
+            toast('Error: ' + (res.error || 'Unknown error'), 'error');
+        }
+    } catch (err) {
+        toast('System error.', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Template';
+    }
+}
+
+function openTemplateExecutor(template) {
+    activeSqlTemplateId = template.id;
+    renderSqlTemplatesList();
+    
+    $('sql-template-empty').classList.add('hidden');
+    $('sql-template-editor').classList.add('hidden');
+    $('sql-template-executor').classList.remove('hidden');
+    
+    $('exec-title').textContent = template.name;
+    $('exec-target-table').textContent = template.target_table;
+    
+    const placeholders = new Set();
+    const regex = /\{([^}]+)\}/g;
+    let match;
+    while ((match = regex.exec(template.set_clause_template)) !== null) placeholders.add(match[1]);
+    while ((match = regex.exec(template.where_clause_template)) !== null) placeholders.add(match[1]);
+    
+    const container = $('exec-inputs-container');
+    container.innerHTML = '';
+    
+    placeholders.forEach(ph => {
+        const group = document.createElement('div');
+        group.className = 'form-group';
+        group.innerHTML = `
+            <label>Input for {${ph}}</label>
+            <input type="text" id="exec-inp-dyn-${ph}" data-placeholder="${ph}" class="form-input code-font" placeholder="Value for {${ph}}">
+        `;
+        container.appendChild(group);
+        const inp = group.querySelector('input');
+        inp.addEventListener('input', updateSqlPreview);
+    });
+    
+    if (placeholders.size === 0) {
+        container.innerHTML = '<div style="font-size: 13px; color: var(--text-2);">No placeholders found in this template.</div>';
+    }
+    
+    $('exec-status-msg').textContent = '';
+    
+    // Check if admin to show edit/delete buttons
+    const isAdmin = String(S.role || '').trim().toLowerCase() === 'admin';
+    const btnDel = $('btn-delete-template');
+    const btnEdit = $('btn-edit-template');
+    if (btnDel) {
+        if (isAdmin) btnDel.classList.remove('hidden');
+        else btnDel.classList.add('hidden');
+    }
+    if (btnEdit) {
+        if (isAdmin) btnEdit.classList.remove('hidden');
+        else btnEdit.classList.add('hidden');
+    }
+    
+    updateSqlPreview();
+}
+
+async function deleteSqlTemplate() {
+    if (!activeSqlTemplateId) return;
+    
+    if (!confirm('Are you sure you want to delete this template?')) return;
+    
+    try {
+        const res = await api().delete_sql_template(activeSqlTemplateId);
+        if (res && res.ok) {
+            toast('Template deleted.', 'success');
+            activeSqlTemplateId = null;
+            loadSqlTemplates();
+        } else {
+            toast('Error: ' + (res.error || 'Unknown error'), 'error');
+        }
+    } catch (err) {
+        toast('System error.', 'error');
+    }
+}
+
+function updateSqlPreview() {
+    const template = sqlTemplates.find(t => t.id === activeSqlTemplateId);
+    if (!template) return;
+    
+    let finalSet = template.set_clause_template;
+    let finalWhere = template.where_clause_template;
+    
+    const inputs = document.querySelectorAll('#exec-inputs-container input');
+    inputs.forEach(inp => {
+        const ph = inp.getAttribute('data-placeholder');
+        const val = inp.value || `{${ph}}`;
+        const regex = new RegExp(`\\{${ph}\\}`, 'g');
+        finalSet = finalSet.replace(regex, val);
+        finalWhere = finalWhere.replace(regex, val);
+    });
+    
+    const finalSql = `UPDATE ${template.target_table}\nSET ${finalSet}\nWHERE ${finalWhere}`;
+    $('exec-sql-preview').textContent = finalSql;
+}
+
+async function executeSqlUpdate() {
+    if (!activeSqlTemplateId || !S.activeServer) return;
+    
+    const inputsDict = {};
+    const inputs = document.querySelectorAll('#exec-inputs-container input');
+    let missing = false;
+    inputs.forEach(inp => {
+        const val = inp.value.trim();
+        if (!val) missing = true;
+        inputsDict[inp.getAttribute('data-placeholder')] = val;
+    });
+    
+    if (missing) {
+        $('exec-status-msg').textContent = 'Please provide values for all placeholders.';
+        $('exec-status-msg').style.color = 'var(--danger)';
+        return;
+    }
+    
+    const btn = $('btn-run-update');
+    btn.disabled = true;
+    btn.textContent = 'Executing...';
+    $('exec-status-msg').textContent = '';
+    
+    try {
+        const res = await api().execute_sql_update(S.activeServer.id, activeSqlTemplateId, inputsDict);
+        if (res && res.ok) {
+            $('exec-status-msg').textContent = res.message;
+            $('exec-status-msg').style.color = 'var(--success)';
+            toast('Update executed successfully.', 'success');
+        } else {
+            $('exec-status-msg').textContent = res.error || 'Failed to execute update.';
+            $('exec-status-msg').style.color = 'var(--danger)';
+        }
+    } catch (err) {
+        $('exec-status-msg').textContent = 'System error.';
+        $('exec-status-msg').style.color = 'var(--danger)';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Execute Update';
+    }
+}
 

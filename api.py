@@ -347,6 +347,8 @@ class Api:
         server = self._authorized_server(server_id)
         if not server:
             return {"ok": False, "error": "Server not found or access denied."}
+        if not self._can_sql_download():
+            return {"ok": False, "error": "You do not have permission to use SQL Download."}
 
         ok, result = sql_agent.execute_select_query(server, sql_query)
         if not ok:
@@ -399,6 +401,61 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+
+    # SQL Update Templates
+
+    def get_sql_templates(self):
+        if not self._is_authenticated():
+            return {"ok": False, "error": "Not authenticated", "templates": []}
+        return {"ok": True, "templates": database.get_sql_templates()}
+
+    def add_sql_template(self, name, target_table, set_clause_template, where_clause_template):
+        if not self._is_admin():
+            return {"ok": False, "error": "Only admins can add templates."}
+        templates = database.add_sql_template(name, target_table, set_clause_template, where_clause_template)
+        return {"ok": True, "templates": templates}
+
+    
+    def edit_sql_template(self, template_id, name, target_table, set_clause_template, where_clause_template):
+        if not self._is_admin():
+            return {"ok": False, "error": "Only admins can edit templates."}
+        templates = database.edit_sql_template(template_id, name, target_table, set_clause_template, where_clause_template)
+        return {"ok": True, "templates": templates}
+
+    def delete_sql_template(self, template_id):
+        if not self._is_admin():
+            return {"ok": False, "error": "Only admins can delete templates."}
+        templates = database.delete_sql_template(template_id)
+        return {"ok": True, "templates": templates}
+
+    def execute_sql_update(self, server_id, template_id, inputs_dict):
+        server = self._authorized_server(server_id)
+        if not server:
+            return {"ok": False, "error": "Server not found or access denied."}
+        if not self._can_sql_update():
+            return {"ok": False, "error": "You do not have permission to use SQL Update."}
+
+        templates = database.get_sql_templates()
+        template = next((t for t in templates if t["id"] == template_id), None)
+        if not template:
+            return {"ok": False, "error": "Template not found."}
+
+        import re
+        final_set = template["set_clause_template"]
+        final_where = template["where_clause_template"]
+
+        if isinstance(inputs_dict, dict):
+            for key, val in inputs_dict.items():
+                placeholder = f"{{{key}}}"
+                final_set = final_set.replace(placeholder, str(val or ""))
+                final_where = final_where.replace(placeholder, str(val or ""))
+
+        ok, result = sql_agent.execute_update_query(server, template["target_table"], final_set, final_where)
+        if not ok:
+            return {"ok": False, "error": str(result)}
+
+        return {"ok": True, "message": result}
+
     # Internal helpers
 
     def _clear_session(self):
@@ -417,14 +474,33 @@ class Api:
 
     def _user_permissions(self):
         if self._is_admin():
-            return {"view": True, "run": True, "toggle": True}
+            return {"view": True, "run": True, "toggle": True, "sql_download": True, "sql_update": True}
         user = database.get_user_by_id(self._current_user_id)
         if not user:
-            return {"view": False, "run": False, "toggle": False}
-        return user.get("permissions", {})
+            return {"view": False, "run": False, "toggle": False, "sql_download": False, "sql_update": False}
+        perms = user.get("permissions") or {}
+        return {
+            "view":         perms.get("view", False),
+            "run":          perms.get("run", False),
+            "toggle":       perms.get("toggle", False),
+            "sql_download": perms.get("sql_download", False),
+            "sql_update":   perms.get("sql_update", False),
+        }
+
+
 
     def _can_toggle_jobs(self):
         return self._user_permissions().get("toggle", False)
+
+    def _can_sql_download(self):
+        if self._is_admin():
+            return True
+        return self._user_permissions().get("sql_download", False)
+
+    def _can_sql_update(self):
+        if self._is_admin():
+            return True
+        return self._user_permissions().get("sql_update", False)
 
     def _has_global_job_access(self):
         return self._role() == "admin"

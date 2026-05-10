@@ -194,11 +194,11 @@ function initProjects() {
     console.log('Initializing Project Listeners...');
     const tabJobs = $('tab-jobs');
     const tabProjects = $('tab-projects');
-    const tabSqlDownload = $('tab-sql-download');
+    const tabSqlDownload = $('tab-sql-operations');
 
     if (tabJobs) tabJobs.addEventListener('click', () => switchTab('jobs'));
     if (tabProjects) tabProjects.addEventListener('click', () => switchTab('projects'));
-    if (tabSqlDownload) tabSqlDownload.addEventListener('click', () => switchTab('sql-download'));
+    if (tabSqlDownload) tabSqlDownload.addEventListener('click', () => switchTab('sql-operations'));
 
     const btnCreate = $('btn-create-project');
     if (btnCreate) btnCreate.addEventListener('click', openCreateProject);
@@ -263,21 +263,21 @@ function initProjects() {
     });
 
     // Init SQL Download panel
-    if (typeof initSqlDownload === 'function') initSqlDownload();
+    if (typeof initSqlDownload === 'function') initSqlOperations();
 }
 
 function switchTab(tab) {
     S.currentView = tab;
     const tJobs = $('tab-jobs');
     const tProjs = $('tab-projects');
-    const tSqlDl = $('tab-sql-download');
+    const tSqlDl = $('tab-sql-operations');
     if (tJobs) tJobs.classList.toggle('active', tab === 'jobs');
     if (tProjs) tProjs.classList.toggle('active', tab === 'projects');
-    if (tSqlDl) tSqlDl.classList.toggle('active', tab === 'sql-download');
+    if (tSqlDl) tSqlDl.classList.toggle('active', tab === 'sql-operations');
 
     const vJobs = $('view-jobs');
     const vProjs = $('view-projects');
-    const vSqlDl = $('view-sql-download');
+    const vSqlDl = $('view-sql-operations');
 
     // Hide all panels first
     if (vJobs) vJobs.style.display = 'none';
@@ -297,7 +297,7 @@ function switchTab(tab) {
         return;
     }
 
-    if (tab === 'sql-download') {
+    if (tab === 'sql-operations') {
         stopProjectSync();
         if (vSqlDl) vSqlDl.classList.remove('hidden');
         return;

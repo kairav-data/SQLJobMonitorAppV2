@@ -39,6 +39,7 @@ def _data_path(filename):
 DB_FILE = _data_path("servers_db.json")
 USERS_DB_FILE = _data_path("users_db.json")
 PROJECTS_DB_FILE = _data_path("projects_db.json")
+SQL_TEMPLATES_DB_FILE = _data_path("sql_templates_db.json")
 
 _CONFIG_CACHE = None
 _SCHEMA_READY = False
@@ -175,6 +176,44 @@ def _load_projects_from_json():
 def _save_projects_to_json(projects):
     projects, _ = _normalize_projects(projects)
     _write_json_file(PROJECTS_DB_FILE, projects)
+
+def _normalize_sql_templates(templates):
+    normalized = []
+    changed = False
+    source = templates if isinstance(templates, list) else []
+    if source is not templates:
+        changed = True
+
+    for t in source:
+        if not isinstance(t, dict):
+            changed = True
+            continue
+
+        item = dict(t)
+        if "id" not in item or not item.get("id"):
+            item["id"] = str(uuid.uuid4())
+            changed = True
+
+        item["name"] = str(item.get("name") or "").strip()
+        item["target_table"] = str(item.get("target_table") or "").strip()
+        item["set_clause_template"] = str(item.get("set_clause_template") or "").strip()
+        item["where_clause_template"] = str(item.get("where_clause_template") or "").strip()
+
+        normalized.append(item)
+
+    return normalized, changed
+
+def _load_sql_templates_from_json():
+    templates = _read_json_file(SQL_TEMPLATES_DB_FILE, [])
+    templates, changed = _normalize_sql_templates(templates)
+    if changed:
+        _write_json_file(SQL_TEMPLATES_DB_FILE, templates)
+    return templates
+
+def _save_sql_templates_to_json(templates):
+    templates, _ = _normalize_sql_templates(templates)
+    _write_json_file(SQL_TEMPLATES_DB_FILE, templates)
+
 
 
 def _normalize_nodes(nodes):
@@ -559,7 +598,18 @@ def _ensure_sql_schema(conn):
             ALTER TABLE dbo.app_users
             ADD permissions_json NVARCHAR(MAX) NOT NULL CONSTRAINT DF_app_users_permissions_json DEFAULT N'{}'
         END
-        """,
+        ""","""
+        IF OBJECT_ID(N'dbo.app_sql_templates', N'U') IS NULL
+        BEGIN
+            CREATE TABLE dbo.app_sql_templates (
+                id NVARCHAR(36) NOT NULL PRIMARY KEY,
+                name NVARCHAR(255) NOT NULL,
+                target_table NVARCHAR(255) NOT NULL,
+                set_clause_template NVARCHAR(MAX) NOT NULL,
+                where_clause_template NVARCHAR(MAX) NOT NULL
+            )
+        END
+        """
     ]
 
     cursor = conn.cursor()
@@ -646,6 +696,30 @@ def _replace_projects_in_sql_conn(conn, projects):
 def _replace_projects_in_sql(projects):
     with closing(_open_sql_connection()) as conn:
         _replace_projects_in_sql_conn(conn, projects)
+
+def _replace_sql_templates_in_sql_conn(conn, templates):
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM dbo.app_sql_templates")
+    for t in templates:
+        cursor.execute(
+            """
+            INSERT INTO dbo.app_sql_templates (
+                id, name, target_table, set_clause_template, where_clause_template
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            str(t["id"]),
+            t.get("name"),
+            t.get("target_table"),
+            t.get("set_clause_template"),
+            t.get("where_clause_template")
+        )
+    conn.commit()
+
+def _replace_sql_templates_in_sql(templates):
+    with closing(_open_sql_connection()) as conn:
+        _replace_sql_templates_in_sql_conn(conn, templates)
+
 
 
 def _load_users_from_sql():
@@ -737,6 +811,31 @@ def _load_projects_from_sql():
         projects, _ = _normalize_projects(projects)
         return projects
 
+def _load_sql_templates_from_sql():
+    with closing(_open_sql_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, name, target_table, set_clause_template, where_clause_template
+            FROM dbo.app_sql_templates
+            ORDER BY name
+            """
+        )
+        templates = []
+        for row in cursor.fetchall():
+            templates.append(
+                {
+                    "id": str(row.id),
+                    "name": row.name,
+                    "target_table": row.target_table,
+                    "set_clause_template": row.set_clause_template,
+                    "where_clause_template": row.where_clause_template,
+                }
+            )
+        templates, _ = _normalize_sql_templates(templates)
+        return templates
+
+
 
 def _ensure_sql_seed_data(conn):
     global _BOOTSTRAP_CHECKED
@@ -820,6 +919,21 @@ def save_projects(projects):
         _save_projects_to_json,
         projects,
     )
+
+def load_sql_templates():
+    return _with_storage_fallback(
+        _load_sql_templates_from_sql,
+        _load_sql_templates_from_json,
+    )
+
+def save_sql_templates(templates):
+    templates, _ = _normalize_sql_templates(templates)
+    _with_storage_fallback(
+        _replace_sql_templates_in_sql,
+        _save_sql_templates_to_json,
+        templates,
+    )
+
 
 
 def _role_has_global_server_access(role):
@@ -1060,7 +1174,13 @@ def add_user(username, password, role):
             "username": clean_username,
             "password": password,
             "role": normalized_role,
-            "permissions": {"view": True, "run": normalized_role in ("admin", "ops"), "toggle": normalized_role in ("admin", "ops")},
+            "permissions": {
+                "view": True,
+                "run": normalized_role in ("admin", "ops"),
+                "toggle": normalized_role in ("admin", "ops"),
+                "sql_download": normalized_role in ("admin", "ops"),
+                "sql_update": normalized_role in ("admin", "ops"),
+            },
         }
     )
     _save_users(users)
@@ -1075,6 +1195,8 @@ def update_user_permissions(user_id, permissions):
                 "view": _parse_bool(permissions.get("view"), True),
                 "run": _parse_bool(permissions.get("run"), False),
                 "toggle": _parse_bool(permissions.get("toggle"), False),
+                "sql_download": _parse_bool(permissions.get("sql_download"), False),
+                "sql_update": _parse_bool(permissions.get("sql_update"), False),
             }
             _save_users(users)
             return True, list_users()
@@ -1196,3 +1318,39 @@ def delete_project(project_id):
     projects = [project for project in projects if project["id"] != project_id]
     save_projects(projects)
     return get_projects(server_id) if server_id else []
+
+
+def get_sql_templates():
+    return load_sql_templates()
+
+def add_sql_template(name, target_table, set_clause_template, where_clause_template):
+    templates = load_sql_templates()
+    new_template = {
+        "id": str(uuid.uuid4()),
+        "name": name,
+        "target_table": target_table,
+        "set_clause_template": set_clause_template,
+        "where_clause_template": where_clause_template,
+    }
+    templates.append(new_template)
+    save_sql_templates(templates)
+    return get_sql_templates()
+
+
+def edit_sql_template(template_id, name, target_table, set_clause_template, where_clause_template):
+    templates = load_sql_templates()
+    for t in templates:
+        if t["id"] == template_id:
+            t["name"] = name
+            t["target_table"] = target_table
+            t["set_clause_template"] = set_clause_template
+            t["where_clause_template"] = where_clause_template
+            break
+    save_sql_templates(templates)
+    return get_sql_templates()
+
+def delete_sql_template(template_id):
+    templates = load_sql_templates()
+    templates = [t for t in templates if t["id"] != template_id]
+    save_sql_templates(templates)
+    return get_sql_templates()

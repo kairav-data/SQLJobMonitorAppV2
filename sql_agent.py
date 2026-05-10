@@ -391,3 +391,54 @@ def execute_select_query(server, sql):
     except Exception as e:
         conn.close()
         return False, str(e)
+
+
+def execute_update_query(server, target_table, set_clause, where_clause):
+    """
+    Execute an UPDATE query against the server.
+    Constructs: UPDATE {target_table} SET {set_clause} WHERE {where_clause}
+    """
+    import re as _re
+
+    # Basic safety checks
+    target_table = str(target_table or "").strip()
+    set_clause = str(set_clause or "").strip()
+    where_clause = str(where_clause or "").strip()
+    
+    if not target_table or not set_clause or not where_clause:
+        return False, "Target table, SET clause, and WHERE clause are all required."
+
+    # Construct query
+    sql = f"UPDATE {target_table} SET {set_clause} WHERE {where_clause}"
+
+    try:
+        address = server.get('address')
+        instance = server.get('instance')
+        user = server.get('user')
+        password = server.get('password')
+        server_str = f"{address}\\{instance}" if instance else address
+        driver = '{ODBC Driver 17 for SQL Server}'
+        if user and password:
+            conn_str = f"DRIVER={driver};SERVER={server_str};DATABASE=master;UID={user};PWD={password};TrustServerCertificate=yes;"
+        else:
+            conn_str = f"DRIVER={driver};SERVER={server_str};DATABASE=master;Trusted_Connection=yes;TrustServerCertificate=yes;"
+        import pyodbc as _pyodbc
+        try:
+            conn = _pyodbc.connect(conn_str, timeout=10)
+        except Exception:
+            # fallback to legacy driver
+            conn_str = conn_str.replace(driver, '{SQL Server}')
+            conn = _pyodbc.connect(conn_str, timeout=10)
+    except Exception as e:
+        return False, str(e)
+
+    try:
+        conn.autocommit = True
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        rowcount = cursor.rowcount
+        conn.close()
+        return True, f"Successfully updated {rowcount} row(s)."
+    except Exception as e:
+        conn.close()
+        return False, str(e)
